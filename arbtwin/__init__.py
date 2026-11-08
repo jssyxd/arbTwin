@@ -13,7 +13,7 @@ Module map (P0-P8 from the research note):
     exitqueue.py     P2-8  passive exit tickets instead of market orders
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
     "anchor", "band", "calibration", "config", "data", "engine", "exitqueue",
     "fees", "issuer_risk", "manipulation", "mechanics", "models", "monitor",
