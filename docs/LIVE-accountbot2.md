@@ -47,15 +47,18 @@
 
 | 标的 | 14d 基差 p95 | σ | 半衰期 | 1% 深度（OKX） | 备注 |
 |---|---:|---:|---:|---:|---|
-| **SOXL** | 10.8 bps | 6.34 | 0.76 h | $4.55M | v1 首选：最深、tick 最细、资金费 28% APR |
-| COIN | 10.4 bps | 4.77 | 0.95 h | $1.33M | 资金到位后加第二只 |
+| **COIN** | 10.4 bps | 4.77 | 0.88 h | $1.33M | b* 6.8（价差最紧）→ v1 首选 |
+| **VVV** | 11.4 bps | 5.72 | 1.70 h | — | b* 8.1，资金费 14% APR |
+| **LIT** | 11.4 bps | 6.04 | 1.60 h | — | b* 6.5；Lighter 自家代币，规则风险最高 |
+| SOXL | 10.8 bps | 6.34 | 0.76 h | $4.55M | **b* 11.5 > p95 → 暂不做**（Lighter 侧价差 4.3 bps） |
+| GRAM | 15.6 bps | 7.38 | 0.86 h | — | **b* 16.0 > p95 → 暂不做**（OKX 侧价差 9.4 bps） |
 | MSTR | 12.4 bps | 5.90 | 1.30 h | $2.9M | **2026-11-11 MSCI 决定**，11-12 前不碰 |
-| ORCL / MRVL / EWY / XPT / SNDK | 8.2–10.0 bps | 4.1–5.2 | 0.8–1.7 h | — | 扣掉 4bps 往返后太薄 |
+| ORCL / MRVL / EWY / XPT / SNDK | 8.2–10.0 bps | 4.1–5.2 | 0.8–1.7 h | — | 按 b* 口径 p95−b* < +1bps，暂不做 |
 
 在 $31.47 资本下**只能开一只**（Lighter 最小 $10 名义 + 保证金占用），因此：
 
 ```yaml
-# config/symbols.starter.yaml 只留 SOXL；同时把上限写死，避免误配
+# config/symbols.starter.yaml 只留 COIN；同时把上限写死，避免误配
 limits:
   max_open_symbols: 1
   max_notional_usd: 15      # 每腿 ~$10-15，正好压在 Lighter 最小单之上
