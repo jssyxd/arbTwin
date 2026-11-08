@@ -71,6 +71,16 @@ class ScreenRow:
     depth_okx_density: float = 0.0
     depth_lighter_density: float = 0.0
     basis_median_bps: float = 0.0
+    basis_p50_bps: float = 0.0
+    events: int = 0
+    completion: float = 0.0
+    trades_per_day: float = 0.0
+    basis_p95_rth_bps: float = 0.0
+    basis_p50_rth_bps: float = 0.0
+    n_rth: int = 0
+    capture_bps: float = 0.0
+    net_per_round_bps: float = 0.0
+    max_fee_bps_for_breakeven: float = 0.0
     basis_p95_bps: float = 0.0
     fill_probability: float = 0.0
     score: float = 0.0
@@ -95,11 +105,34 @@ class ScreenRow:
             "band_bps": round(self.band_bps, 2),
             "session": self.session,
             "preferred_mode": self.preferred_mode,
+            # wave-mode contract: without these the engine has no thresholds
+            "entry_bps_p95": round(self.basis_p95_rth_bps or self.basis_p95_bps, 2),
+            "exit_bps_p50": round(self.basis_p50_rth_bps or self.basis_p50_bps, 2),
+            "band_override_bps": round(self.basis_p95_rth_bps or self.basis_p95_bps, 2),
+            "entry_deadline_s": 5400,
+            "exit_deadline_s": 3600,
+            "max_hold_h": 4.0,
+            "b_star_bps": round(self.b_star_bps, 2),
+            "spread_okx_bps": round(self.spread_okx_bps, 2),
+            "spread_lighter_bps": round(self.spread_lighter_bps, 2),
+            "capture_bps": round(self.capture_bps, 2),
+            "net_per_round_bps": round(self.net_per_round_bps, 2),
+            "events": self.events,
+            "completion": round(self.completion, 3),
+            "trades_per_day": round(self.trades_per_day, 2),
             "notes": {
                 "ratio_cv_pct": round(self.ratio_cv_pct, 4),
                 "return_corr": round(self.return_corr, 5),
                 "score": round(self.score, 2),
                 "basis_p95_bps": round(self.basis_p95_bps, 2),
+            "basis_p95_rth_bps": round(self.basis_p95_rth_bps, 2),
+            "basis_p50_rth_bps": round(self.basis_p50_rth_bps, 2),
+            "capture_bps": round(self.capture_bps, 2),
+            "events": self.events,
+            "completion": round(self.completion, 3),
+            "trades_per_day": round(self.trades_per_day, 2),
+            "net_per_round_bps": round(self.net_per_round_bps, 2),
+            "max_fee_bps_for_breakeven": round(self.max_fee_bps_for_breakeven, 2),
                 "fill_probability": round(self.fill_probability, 3),
             },
         }
@@ -107,6 +140,59 @@ class ScreenRow:
     def to_dict(self) -> dict:
         d = {k: (round(v, 6) if isinstance(v, float) else v) for k, v in self.__dict__.items()}
         return d
+
+
+def event_study(basis_bps: "list[tuple[float, float]]", session_kind: str = "crypto",
+                max_hold_bars: int = 4) -> dict:
+    """Enter when |basis| >= p95, leave at |basis| <= p50 (or mark to market).
+
+    `basis_bps` is [(timestamp_s, signed_basis_bps)] in chronological order, already
+    restricted to the session the engine can trade.  Returns the conditional
+    expectation that actually matters: mean capture per *event*, completion rate,
+    and how many events per day.
+
+    Why not `p95 − p50`: entries happen when the basis is at or beyond the tail, so
+    the expected entry level is E[b | b>=p95] (~p99), not p95.  Using p95 understates
+    capture; using it as if you always enter exactly at p95 also understates the
+    fill level.  This measures the conditional mean and includes timeouts.
+    """
+    import statistics as _st
+    from .anchor import Session as _S
+
+    if len(basis_bps) < 50:
+        return {"events": 0, "completion": 0.0, "capture_bps": 0.0, "per_day": 0.0,
+                "note": "sample too small"}
+    sess = _S(kind=session_kind)
+    tradable = [(t, b) for t, b in basis_bps if sess.is_open(t)]
+    pool = tradable if len(tradable) >= 60 else basis_bps
+    if session_kind != "crypto" and len(tradable) >= 60:
+        pass
+    absb = [abs(b) for _t, b in pool]
+    p95 = percentile(absb, 0.95)
+    p50 = percentile(absb, 0.50)
+    caps: list[float] = []
+    completions = 0
+    for i, (_t, b) in enumerate(pool):
+        if abs(b) < p95:
+            continue
+        sign = 1.0 if b > 0 else -1.0
+        exit_j = None
+        for j in range(i + 1, min(i + 1 + max_hold_bars, len(pool))):
+            if sign * pool[j][1] <= p50:
+                exit_j = j
+                break
+        j_end = exit_j if exit_j is not None else min(i + max_hold_bars, len(pool) - 1)
+        caps.append(sign * (b - pool[j_end][1]))
+        if exit_j is not None:
+            completions += 1
+    if not caps:
+        return {"events": 0, "completion": 0.0, "capture_bps": 0.0, "per_day": 0.0,
+                "p95": p95, "p50": p50, "note": "no events"}
+    span_days = max((pool[-1][0] - pool[0][0]) / 86400.0, 1e-9)
+    return {"events": len(caps), "completion": completions / len(caps),
+            "capture_bps": _st.fmean(caps), "per_day": len(caps) / span_days,
+            "p95": p95, "p50": p50,
+            "worst_bps": min(caps), "best_bps": max(caps)}
 
 
 def classify_session(symbol: str, extra_crypto: Optional[set[str]] = None) -> str:
@@ -189,10 +275,23 @@ def screen_symbols(cfg: AppConfig, okx: OkxVenue, lighter: LighterVenue,
         basis_series = [(lt_series[k] / calib.ratio - okx_series[k]) / okx_series[k] * 1e4
                         for k in sorted(set(okx_series) & set(lt_series))]
         basis = basis_series
+        # The engine may only quote inside the reference session, so the trigger must
+        # be the p95 of the *tradable* window — not of a 24/7 mix whose tail is
+        # concentrated in closed hours (the transcript measured 78x there for SPY).
+        from .anchor import Session as _Session
+        _sess = _Session(kind=row.session)
+        keys_all = sorted(set(okx_series) & set(lt_series))
+        rth = [abs((lt_series[k] / calib.ratio - okx_series[k]) / okx_series[k] * 1e4)
+               for k in keys_all if _sess.is_open(k / 1000.0)]
+        row.n_rth = len(rth)
+        if rth:
+            row.basis_p95_rth_bps = percentile(rth, 0.95)
+            row.basis_p50_rth_bps = percentile(rth, 0.50)
         row.basis_sigma_bps = statistics.pstdev(basis_series) if len(basis_series) > 2 else sigma
         band = entry_band_bps(row.basis_sigma_bps, fee_bps, cfg.band)
         row.band_bps = band
         row.basis_median_bps = statistics.median(basis) if basis else 0.0
+        row.basis_p50_bps = percentile([abs(b) for b in basis], 0.50) if basis else 0.0
         row.basis_p95_bps = percentile([abs(b) for b in basis], 0.95) if basis else 0.0
         row.fill_probability = sum(1 for b in basis if abs(b) >= band) / len(basis) if basis else 0.0
 
@@ -256,19 +355,48 @@ def screen_symbols(cfg: AppConfig, okx: OkxVenue, lighter: LighterVenue,
             continue
 
         # 6. score: expected net edge * fill probability, best of the two modes
-        row.net_taker_bps = row.basis_p95_bps - fee_bps - latency - cfg.limits.max_slippage_bps
-        row.net_maker_bps = row.basis_p95_bps - row.b_star_bps
+        # A round captures (p95 − p50), NOT p95: you enter at the tail and leave at
+        # the median.  Booking p95 as gross overstates every projection by ~2x.
+        entry_p95 = (row.basis_p95_rth_bps
+                     if (row.session != "crypto" and row.n_rth >= 120) else row.basis_p95_bps)
+        exit_p50 = (row.basis_p50_rth_bps
+                    if (row.session != "crypto" and row.n_rth >= 120) else row.basis_p50_bps)
+        study = event_study([(k / 1000.0, (lt_series[k] / calib.ratio - okx_series[k]) / okx_series[k] * 1e4)
+                             for k in sorted(set(okx_series) & set(lt_series))],
+                            session_kind=row.session,
+                            max_hold_bars=int((cfg.risk.get("screening") or {}).get("max_hold_bars", 4)))
+        row.events = int(study.get("events", 0))
+        row.completion = float(study.get("completion", 0.0))
+        row.trades_per_day = float(study.get("per_day", 0.0))
+        row.capture_bps = float(study.get("capture_bps", 0.0)) if row.events else max(0.0, entry_p95 - exit_p50)
+        p_fail = float((cfg.risk.get("screening") or {}).get("p_fail_prior", 0.15))
+        abort_cost = p_fail * row.b_star_bps
+        row.net_per_round_bps = row.capture_bps - row.b_star_bps - abort_cost
+        # what maker fee would make this break even (the only lever the transcript names)
+        spread_cost = row.spread_okx_bps + row.spread_lighter_bps
+        row.max_fee_bps_for_breakeven = max(
+            0.0, row.capture_bps - spread_cost - adverse_margin_bps
+            - p_fail * (row.b_star_bps))
+        row.net_taker_bps = entry_p95 - fee_bps - latency - cfg.limits.max_slippage_bps
+        row.net_maker_bps = row.net_per_round_bps
         best_net = max(row.net_taker_bps, row.net_maker_bps)
         row.preferred_mode = "hedge_now" if row.net_taker_bps >= row.net_maker_bps else "dual_maker"
         row.score = best_net * max(row.fill_probability, 1e-6) * min(card.size_factor, 1.0)
+        min_net = float((cfg.risk.get("screening") or {}).get("min_net_per_round_bps", 1.0))
         if row.basis_p95_bps < min_move_bps:
             row.reject_reasons.append(f"basis p95 {row.basis_p95_bps:.1f}bps below {min_move_bps}bps floor")
             continue
         if best_net <= 0:
             row.reject_reasons.append(
-                f"basis p95 {row.basis_p95_bps:.1f}bps < b* {row.b_star_bps:.1f}bps "
-                f"(fees {row.maker_fee_bps:.1f} + 2x half-spread {row.spread_okx_bps:.1f}/{row.spread_lighter_bps:.1f})"
-                f" -> maker net {row.net_maker_bps:+.1f}bps")
+                f"net {row.net_per_round_bps:+.1f}bps/round < 0: capture {row.capture_bps:.1f} "
+                f"(p95 {row.basis_p95_rth_bps or row.basis_p95_bps:.1f} -> p50 "
+                f"{row.basis_p50_rth_bps or row.basis_p50_bps:.1f}, {row.events} events, "
+                f"{row.completion:.0%} complete) - b* {row.b_star_bps:.1f} "
+                f"(fees {row.maker_fee_bps:.1f} + spreads {row.spread_okx_bps:.1f}/{row.spread_lighter_bps:.1f} + margin)")
+        elif best_net < min_net:
+            row.reject_reasons.append(
+                f"net {row.net_per_round_bps:+.1f}bps/round < min {min_net:.1f} "
+                f"(thin: {row.trades_per_day:.2f} trades/day, {row.completion:.0%} complete)")
             continue
         if row.score < min_score:
             row.reject_reasons.append(f"score {row.score:.2f} < {min_score}")
@@ -276,6 +404,10 @@ def screen_symbols(cfg: AppConfig, okx: OkxVenue, lighter: LighterVenue,
 
         row.approved = True
         row.reasons.append(
+            f"capture {row.capture_bps:.1f}bps (p95rth {row.basis_p95_rth_bps:.1f} − "
+            f"p50rth {row.basis_p50_rth_bps:.1f}) − b* {row.b_star_bps:.1f} − "
+            f"p_fail {p_fail:.2f}·b* = {row.net_per_round_bps:+.1f}bps/round; "
+            f"breakeven needs maker fee ≤ {row.max_fee_bps_for_breakeven:.1f}bps; "
             f"ratio {calib.ratio:.6f} cv {row.ratio_cv_pct:.3f}% corr {row.return_corr:.4f}; "
             f"sigma {sigma:.1f}bps band {band:.1f}bps; basis p95 {row.basis_p95_bps:.1f}bps; "
             f"net taker-hedge {row.net_taker_bps:.1f}bps / maker-maker {row.net_maker_bps:.1f}bps; "

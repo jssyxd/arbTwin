@@ -8,7 +8,7 @@
 | 项 | 值 | 来源 |
 |---|---|---|
 | Lighter account index | 767659 | 用户提供 |
-| Lighter USDC 余额 | **0.000000** | `GET /api/v1/account?by=index&value=767659` |
+| Lighter USDC | **$27.629041 可用**（`collateral` / `available_balance` / `total_asset_value`）；`assets[].balance` 字段恒为 `0.000000`，不能用它算权益 | `GET /api/v1/account?by=index&value=767659`，2026-11-08 |
 | Lighter 已注册 API key | **0 个**（`api_keys: []`） | 同上 |
 | Lighter 持仓 | 0 | 同上 |
 | OKX API key | 已配置（读/交易），IP 白名单 155.254.60.38 / 23.27.186.126 | 用户提供 |
@@ -20,7 +20,7 @@
 | # | 阻塞 | 证据 | 解除方式 |
 |---|---|---|---|
 | 1 | OKX 私钥请求无法签名 | `.env` 中 `OKX_API_PASSPHRASE` 为空；OKX 所有私有接口都要求 passphrase | 提供 API key 的 passphrase（创建时自己设的那串，不是登录密码） |
-| 2 | Lighter 无抵押品 | 账户 767659 的 USDC 余额为 0 | 从 L1 往 Lighter 充值 USDC（建议 ≥ $10，最小下单就是 $10 名义） |
+| 2 | ~~Lighter 无抵押品~~ **已解除** | `available_balance = 27.629041`（此前读 `assets[].balance` 误判为 0） | 无需充值；引擎已改用账户级总字段 |
 | 3 | Lighter API key 未注册 | `api_keys: []` | 用持有 767659 的 L1 钱包做一次 `ChangePubKey`（Lighter 网页或 SDK `create_api_key()`）；随后给我 key index + 私钥 |
 
 > 两腿策略要求两所都有保证金。任何一侧为 0，引擎的 `_target_notional()` 返回 0，不会下单。
@@ -78,7 +78,8 @@ cd /opt/arbtwin && .venv/bin/python -m arbtwin.cli doctor
 systemctl status arbtwin --no-pager | head -5
 
 # 4) 单标的、最小合法名义进实盘（先 SOXL，$10–12/腿）
-#    改 .env: ARBTWIN_DRY_RUN=0；systemd ExecStart 加 --i-know-what-im-doing
+#    ⚠️ 本 build 拒绝 live：ARBTWIN_DRY_RUN=0 会在启动时 exit 2
+#    （成交对账未落地）。以下步骤在订单状态轮询完成前不可执行。
 #    改 config/symbols.starter.yaml 只留 SOXL
 
 # 5) 观察 24h

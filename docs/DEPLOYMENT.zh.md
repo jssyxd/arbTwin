@@ -248,6 +248,11 @@ ARBTWIN_DRY_RUN=1 ARBTWIN_SYMBOLS=config/symbols.starter.yaml \
 * dry-run 的 `state/snapshot.jsonl` 里，每轮都有 3 个标的的 `action`/`net_bps`/`band_bps`，
   且 `action` 会在 `MAKER`/`WAIT` 之间切换（说明阈值不是死的）。
 
+> ⚠️ **本 build 只支持 dry-run。** `ARBTWIN_DRY_RUN=0` 会在启动时被 `_assert_live_is_safe()`
+> 拒绝（CLI 打印 `refusing to run: ...` 并 `exit 2`），因为成交仍靠盘口穿越推断、
+> 尚未接交易所订单状态。systemd 单元已加 `StartLimitIntervalSec=60 / StartLimitBurst=5`，
+> 不会变成 5 秒一次的崩溃循环。解除条件：venue 订单状态轮询 + `client_order_index` 幂等落地。
+
 ### 3.2 阶段 1：单标的、最小仓（1 天）
 
 ```bash

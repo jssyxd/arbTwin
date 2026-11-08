@@ -436,3 +436,26 @@ def test_live_okx_without_passphrase_is_fail_closed():
     spec = MarketSpec("okx", "X", "X-USDT-SWAP", 2, 3, 0.001, 0.0)
     with pytest.raises(Exception):
         okx.place(OrderRequest("okx", "X", "buy", 1.0, 100.0), spec)
+
+
+def test_lighter_equity_prefers_account_totals():
+    """`assets[].balance` reads 0.000000 on a funded account (margin_balance has
+    the money) -- sizing against `balance` would silently never trade."""
+    from arbtwin.venues.lighter import LighterVenue
+
+    v = LighterVenue()
+    v.creds.account_index = 767659
+
+    class FakeResp:
+        @staticmethod
+        def read():
+            import json as _j
+            return _j.dumps({"accounts": [{
+                "assets": [{"symbol": "USDC", "balance": "0.000000", "margin_balance": "27.629041"}],
+                "collateral": "27.629041", "available_balance": "27.629041",
+                "total_asset_value": "27.629041"}]}).encode()
+
+    v._get = lambda path, params=None: __import__("json").loads(  # type: ignore[assignment]
+        '{"accounts":[{"assets":[{"symbol":"USDC","balance":"0.000000","margin_balance":"27.629041"}],'
+        '"collateral":"27.629041","available_balance":"27.629041","total_asset_value":"27.629041"}]}')
+    assert v.equity_usd() == pytest.approx(27.629041)

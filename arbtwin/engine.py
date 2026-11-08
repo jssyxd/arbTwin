@@ -197,6 +197,11 @@ class TwinEngine:
         self._reconcile_orphans()
         if self.cfg.strategy == "wave":
             params = {s: st.wave_params for s, st in self.states.items() if st.wave_params}
+            if not params and self.states:
+                self._alert("critical", "engine",
+                            "strategy=wave but no symbol carries entry_bps_p95/band_override_bps "
+                            "— the engine would only observe. Re-run `arbtwin screen` or set the "
+                            "thresholds in config/symbols*.yaml.")
             if params:
                 self.wave = WaveTrader(params, place=self._wave_place, cancel=self._wave_cancel,
                                        persist=lambda rec: write_state(f"{self.cfg.state_dir}/rounds.jsonl", rec),
@@ -663,7 +668,11 @@ class TwinEngine:
         # perp today).  With a tiny account, sizing can fall under it -> skip the
         # round instead of spraying rejects at the venue.
         venue_min = max(st.spec_lighter.min_quote or 0.0, st.spec_okx.min_quote or 0.0)
-        if venue_min and notional < venue_min:
+        floor = max(venue_min, getattr(limits, "min_round_notional_usd", 0.0) or 0.0)
+        if floor and notional < floor:
+            self._alert("warn", symbol,
+                        f"sizing ${notional:.2f} below the round floor ${floor:.2f} "
+                        f"(equity okx={okx_eq:.2f}/lighter={lt_eq:.2f})")
             return 0.0
         return notional
 

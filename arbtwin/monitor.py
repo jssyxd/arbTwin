@@ -103,6 +103,7 @@ class Monitor:
                 "band_bps": round(row.entry_band_bps, 2),
                 "fee_bps": round(row.fee_bps, 2),
                 "maker_fee_bps": round(row.maker_fee_bps, 2),
+                "spread_cost_bps": round(getattr(row, "spread_cost_bps", 0.0), 2),
                 "latency_bps": round(row.latency_cost_bps, 2),
                 "action": row.action,
                 "direction": row.direction,

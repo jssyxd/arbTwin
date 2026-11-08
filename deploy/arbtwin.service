@@ -15,6 +15,9 @@ Environment=ARBTWIN_DRY_RUN=1
 ExecStart=/opt/arbtwin/.venv/bin/arbtwin run --interval 1
 Restart=always
 RestartSec=5
+# a refused start (e.g. live disabled in this build) must not spin forever
+StartLimitIntervalSec=60
+StartLimitBurst=5
 StandardOutput=append:/var/log/arbtwin/engine.log
 StandardError=append:/var/log/arbtwin/engine.log
 NoNewPrivileges=yes

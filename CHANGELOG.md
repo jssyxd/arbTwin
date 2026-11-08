@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## v0.2.4 — 统计透镜 + 运维透镜的第一轮修正（2026-11-08）
+
+### 收益口径（推翻旧结论）
+
+- 每轮捕获是 `E[basis | basis≥p95] − 出场阈值`，**不是**入场基差。`event_study()` 现在
+  在 screening 里做这件事（按 session 取样本、4 小时窗口、超时按市值计），输出
+  `capture_bps / completion / events / trades_per_day / net_per_round_bps`。
+- 净额公式：`capture − b* − p_fail·b*`（`p_fail` 先验 0.15）。旧的 "单次毛利 8~11bps、
+  净 3~6bps" 是错的（把 p95 当毛利、半价差只算一次）。
+- 阈值改为**分 session** 计算（`basis_p95_rth_bps` / `basis_p50_rth_bps`，需要 ≥120 个
+  交易时段样本），因为引擎只在参考市场开市时挂单；混合 24/7 样本的尾部会被闭市时段污染。
+- 运行时 gate 也补上价差：`maker_net = basis − maker_fee − (spread_okx + spread_lt) − funding`
+  （旧版少扣 2–6 bps，会在 screener 已判定亏损的价位入场）。
+
+### 运维与静默失败
+
+- **Lighter 权益字段读错**：`assets[].balance` 对已入金账户读作 `0.000000`（实测
+  `margin_balance/collateral = 27.629041`）→ 权益 0 → sizing 0。改为账户级
+  `total_asset_value → collateral → available_balance → margin_balance`，并加单测。
+- sizing 下限可配（`limits.min_round_notional_usd`），低于下限**告警**而不是静默 `continue`；
+  wave 模式下没有 `entry_bps_p95` 会 critical 告警（否则引擎退化成只观察）。
+- `screen` 的输出现在包含 wave 需要的全部字段（`entry_bps_p95` / `exit_bps_p50` /
+  `band_override_bps` / deadlines / `b_star_bps` / spreads / capture / net），
+  例行重扫不会再悄悄把生产配置写坏。
+- live 被拒时 CLI 打印一行并 `exit 2`（不再抛栈）；systemd 单元加
+  `StartLimitIntervalSec=60 / StartLimitBurst=5`，不会 5 秒一次崩溃循环。
+
 ## v0.2.3 — 对抗式评审修正（2026-11-08）
 
 一组 reviewer 透镜发现的 8 个缺陷，全部有测试：

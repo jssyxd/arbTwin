@@ -135,7 +135,11 @@ def cmd_run(args) -> int:
         return 2
     engine = TwinEngine(cfg, okx, lighter)
     print(f"arbTwin {__version__} | dry_run={cfg.dry_run} | symbols={len(cfg.symbols)}")
-    engine.run_forever(iterations=args.iterations, interval_s=args.interval or None)
+    try:
+        engine.run_forever(iterations=args.iterations, interval_s=args.interval or None)
+    except RuntimeError as exc:            # e.g. live is refused in this build
+        print(f"refusing to run: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 

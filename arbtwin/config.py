@@ -120,6 +120,7 @@ class EngineLimits:
 
     max_margin_usage_pct: float = 0.35       # per venue, of that venue's own equity
     max_notional_usd: float = 3000.0         # per symbol across both legs
+    min_round_notional_usd: float = 25.0     # below this a round is not worth the orders
     max_open_symbols: int = 4
     max_unhedged_notional_usd: float = 150.0
     max_unhedged_ms: int = 800

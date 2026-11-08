@@ -93,7 +93,13 @@ def compute_row(
     # it needs its own (wider, sigma-scaled) band.
     maker_fee = fees.round_trip_bps(lead_venue, hedge_venue, "post_only", "post_only",
                                     close_type="post_only")
-    maker_net = basis - maker_fee - funding_cost_bps
+    # A dual-maker round trip crosses the half-spread twice (entry at our own side,
+    # exit back through it).  Leaving it out makes the live gate 2-5 bps optimistic
+    # and lets the engine enter where the screener has already said "below b*".
+    spread_cost_bps = 0.0
+    if okx_book.spread_bps < 1e4 and lighter_book.spread_bps < 1e4:
+        spread_cost_bps = okx_book.spread_bps + lighter_book.spread_bps
+    maker_net = basis - maker_fee - spread_cost_bps - funding_cost_bps
     maker_band = entry_band_bps(sigma_basis_bps if sigma_basis_bps is not None else sigma_1h_bps,
                                 maker_fee, band_params)
     if band_override_bps > 0:
@@ -106,6 +112,7 @@ def compute_row(
         fee_bps=fee_bps, latency_cost_bps=lat_bps, slippage_bps=slippage_bps,
         net_edge_bps=net, entry_band_bps=band,
         maker_fee_bps=maker_fee, maker_net_bps=maker_net, maker_band_bps=maker_band,
+        spread_cost_bps=spread_cost_bps,
         direction=direction,
     )
     gross_triggered = abs(basis) >= band if band_override_bps > 0 else False

@@ -305,9 +305,17 @@ class LighterVenue(VenueAdapter):
         accounts = data.get("accounts") or []
         if not accounts:
             return 0.0
-        for asset in accounts[0].get("assets", []):
+        acct = accounts[0]
+        # `assets[].balance` can be "0.000000" for a funded account (measured:
+        # balance 0, margin_balance 27.63, collateral 27.63).  Prefer the
+        # account-level totals, fall back to the asset row.
+        for field in ("total_asset_value", "collateral", "available_balance"):
+            value = _f(acct.get(field))
+            if value > 0:
+                return value
+        for asset in acct.get("assets", []):
             if asset.get("symbol") == "USDC":
-                return _f(asset.get("balance"))
+                return max(_f(asset.get("margin_balance")), _f(asset.get("balance")))
         return 0.0
 
     # ------------------------------------------------------------------ trading
