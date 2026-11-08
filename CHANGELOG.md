@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## v0.2.1 — wave 执行模式 + 第一台实机部署（2026-11-08）
+
+- `strategy: wave`（`arbtwin/wave.py` + `wavetrader.py`）：一轮一清、纯限价、
+  两腿必须同时出清；一腿成交后继续等另一腿（不市价对冲）；出场冻结触发时点价；
+  仅在 deadline / 风险止损时允许一次 IOC。12 个单测覆盖状态机，2 个覆盖引擎端到端。
+- dry-run 成交代理改为"**穿过才成交**"（挂在盘口的单不会自我成交），避免回放/演练高估成交。
+- `config/symbols.starter.yaml` 增加 `entry_bps_p95` / `exit_bps_p50`（14 天实测分位）与
+  两腿 deadline、max hold。
+- 实机部署记录写进 `docs/DEPLOYMENT.zh.md` 第 8 节（swap 1G 持久化、systemd、nautilus 3.12 独立 venv、
+  1C/1G 的资源约束与两个部署坑）。
+- README 补 C 栏位：`0.3.1 为什么只能限价`（4 bps vs 10–17 bps 的算术）。
+
 ## v0.2.0 — 实盘手册、资金费单位修正、v1 starter universe（2026-11-08）
 
 ### 一、单位修正（100 倍错误，必须写死）

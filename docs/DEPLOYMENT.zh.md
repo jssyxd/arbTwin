@@ -423,6 +423,27 @@ sudo systemctl stop arbtwin                 # 先停引擎，避免它继续挂�
 
 ---
 
+## 8. 部署实录（2026-11-08，目标机 155.254.60.38）
+
+| 项 | 记录 |
+|---|---|
+| 主机 | Debian 12（`6.1.0-50-amd64`），1 vCPU / 960 MB RAM / 9.8 GB 磁盘 |
+| Swap | `/swapfile` 1 GB，`/etc/fstab` 已写 `/swapfile none swap sw 0 0`，`vm.swappiness=20`；用 `swapoff -a && swapon -a` 验证过重启可自动挂载 |
+| 代码 | `/opt/arbtwin`（`git clone --depth 1`），venv `/opt/arbtwin/.venv`，`arbtwin 0.2.0`，Python 3.11.2 |
+| 服务 | `arbtwin.service`（User=arbtwin，`ARBTWIN_DRY_RUN=1`，`--interval 1`），`active`，`NRestarts=0`，RSS ≈ 52 MB，CPU ≈ 15% |
+| universe | `ARBTWIN_SYMBOLS=config/symbols.starter.yaml`（SOXL / VVV / GRAM，wave 模式，p95→p50） |
+| NautilusTrader | 独立 venv `/opt/nautilus-venv`，Python **3.12.16**，`nautilus_trader 1.231.0`（该版本要求 ≥3.12，用 `uv` 装 CPython 3.12 + manylinux 轮子，未做源码编译） |
+| 连通性 | 从该机：OKX `200`；Lighter `orderBookDetails` `200`（BTC mark 75884.8）→ 无需代理 |
+| 状态文件 | `/opt/arbtwin/state/snapshot.jsonl` 每轮落盘，示例：`SOXL WAIT basis -1.66 / trigger 10.8`、`GRAM BLOCK（薄盘口）` |
+
+两个部署期踩到的坑（已修进文档/配置）：
+
+1. **`User=arbtwin` 没建用户** → systemd `status=217/USER` 死循环；`useradd -r` + `chown -R` 后正常。
+2. **`.env` 里 `ARBTWIN_SYMBOLS` 指向全量 12 标的** → 服务跑的是全量 universe；改成 `config/symbols.starter.yaml` 才是 v1 的 3 标的。
+
+> 1 GB 机器上不要同时跑 nautilus 与实盘引擎：`import nautilus_trader` 本身就要 300–500 MB，
+> swap 只是 OOM 缓冲，不是性能来源。
+
 ## 7. 附：本次交付的验收清单
 
 - [x] 单位可证（CV ≤ 0.08%、相关 ≥ 0.999）→ `calibration.py`，每次 `screen` 复算
