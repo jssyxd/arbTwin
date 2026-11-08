@@ -283,9 +283,9 @@ class TwinEngine:
                 slippage_bps=self.cfg.limits.max_slippage_bps * gate.metrics.get("latency_multiplier", 1.0),
                 funding_cost_bps=funding_cost_bps,
             )
+            side = "cost" if carry > 0.5 else ("income" if carry < -0.5 else "flat")
             row.reasons.append(
-                f"net carry {carry:+.0f}% APR "
-                f"({'cost' if carry > 0 else 'income'}, {funding_cost_bps:.1f}bps over "
+                f"net carry {carry:+.0f}% APR ({side}, {funding_cost_bps:.1f}bps over "
                 f"{self.cfg.limits.expected_hold_h:.0f}h)")
             if row.action in ("ENTER", "MAKER") and carry > self.cfg.limits.max_funding_carry_apr_pct * 3:
                 row.action = "BLOCK"
@@ -635,6 +635,13 @@ class TwinEngine:
 
     def run_forever(self, iterations: int = 0, interval_s: float | None = None) -> None:
         interval = (interval_s if interval_s is not None else self.cfg.poll_interval_ms / 1000.0)
+        # rate-limit floor: each symbol costs ~2 REST calls per poll and
+        # `max_open_symbols` is not the universe size — scale, never hammer.
+        floor_s = 0.12 * max(1, len(self.states or self.cfg.symbols))
+        if interval < floor_s:
+            log.info("interval %.2fs below the safe floor for %d symbols; using %.2fs",
+                     interval, len(self.states or self.cfg.symbols), floor_s)
+            interval = floor_s
         i = 0
         self.load_universe()
         self.start_streams()

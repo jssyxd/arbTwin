@@ -78,6 +78,11 @@ class OkxVenue(VenueAdapter):
         self._books: dict[str, Book] = {}
         self._lock = threading.Lock()
         self._ws: Optional[_OkxWs] = None
+        # mark/index/funding/OI change on the order of seconds-to-hours while the
+        # book changes in milliseconds.  Caching stats keeps a 12-symbol poll at
+        # a handful of REST calls instead of ~40 (OKX allows 20 req / 2 s).
+        self._stats_cache: dict[str, tuple[float, MarketStats]] = {}
+        self.stats_ttl_s = 5.0
 
     # ------------------------------------------------------------------ rest
     def _get(self, path: str, params: Optional[dict] = None) -> dict:
@@ -181,6 +186,9 @@ class OkxVenue(VenueAdapter):
         spec = self._by_symbol.get(symbol) or self.specs([symbol]).get(symbol)
         if not spec:
             raise VenueError(f"okx: unknown symbol {symbol}")
+        cached = self._stats_cache.get(symbol)
+        if cached and (time.time() - cached[0]) <= self.stats_ttl_s:
+            return cached[1]
         book = self.book(symbol)
         ticker = self._get("/api/v5/market/ticker", {"instId": spec.market_ref})["data"][0]
         funding = {}
@@ -197,7 +205,7 @@ class OkxVenue(VenueAdapter):
         except Exception:
             oi = 0.0
         mark = float(ticker.get("last") or book.mid)
-        return MarketStats(
+        stats = MarketStats(
             venue=self.name, symbol=symbol,
             mark_price=float(funding.get("markPx") or mark),
             index_price=float(funding.get("indexPx") or ticker.get("idxPx") or mark),
@@ -209,6 +217,8 @@ class OkxVenue(VenueAdapter):
             funding_interval_h=self.funding_interval_h,
             ts=time.time(),
         )
+        self._stats_cache[symbol] = (time.time(), stats)
+        return stats
 
     def _ingest(self, inst_id: str, bids, asks) -> None:
         symbol = inst_id.split("-")[0].upper()
