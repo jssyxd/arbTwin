@@ -185,6 +185,8 @@ def main() -> int:
     ap.add_argument("out", help="output .html")
     ap.add_argument("--prepend-from", default="", help="archive builder holding older turns")
     ap.add_argument("--prepend-index", type=int, default=0)
+    ap.add_argument("--no-redact", action="store_true",
+                    help="keep secrets verbatim (local only; will be blocked on push)")
     ap_args = ap.parse_args()
     src, out_path = Path(ap_args.session), Path(ap_args.out)
     rows = []
@@ -234,6 +236,8 @@ def main() -> int:
         elif role == "toolResult":
             continue
 
+    if ap_args.no_redact:
+        globals()["redact"] = lambda text: text
     if ap_args.prepend_from:
         turns = load_prepend(ap_args.prepend_from, ap_args.prepend_index) + turns
 
