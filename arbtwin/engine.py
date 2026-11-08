@@ -189,6 +189,7 @@ class TwinEngine:
                     exit_deadline_s=float(entry.get("exit_deadline_s") or 3600.0),
                     max_unhedged_notional_usd=float(entry.get("max_unhedged_notional_usd")
                                                     or self.cfg.limits.max_unhedged_notional_usd),
+                    leg_sigma_1h_bps=float(entry.get("sigma_1h_bps") or 0.0),
                 ) if str(entry.get("entry_bps_p95") or entry.get("band_override_bps")) else None,
                 spec_okx=okx_specs[symbol],
                 spec_lighter=lighter_specs[symbol],

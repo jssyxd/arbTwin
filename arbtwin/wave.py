@@ -74,6 +74,11 @@ class WaveParams:
     # existed in config but was never read; enforce it here.
     max_unhedged_notional_usd: float = 150.0
     adverse_move_stop_bps: float = 60.0
+    # A naked leg's stop has to scale with the leg's own volatility: at SOXL's
+    # sigma_1h = 244 bps a fixed 60 bps stop aborts every pair, while on a quiet
+    # name 60 bps is already wide.  Effective stop = max(floor, k*sigma*sqrt(dt)).
+    leg_sigma_1h_bps: float = 0.0
+    adverse_sigma_mult: float = 2.0
     # The reopen step is huge (measured 43.8 bps = 65x a typical hourly step), so a
     # round must not be *started* near the close and must be *left* before it.
     no_new_entry_min_before_close: float = 60.0
@@ -294,11 +299,14 @@ def decide(round_: Round, basis_bps: float, okx_book: Book, lt_book: Book,
             sign = 1.0 if leg.side == "buy" else -1.0
             move_bps = (mark - leg.filled_px) / max(leg.filled_px, 1e-12) * 1e4 * sign
             worst_adverse_bps = min(worst_adverse_bps, move_bps)
+        dt_h = max(1.0 / 3600.0, (time.time() - (round_.entry_state_ts or time.time())) / 3600.0)
+        stop_bps = max(p.adverse_move_stop_bps,
+                       p.adverse_sigma_mult * p.leg_sigma_1h_bps * min(dt_h, 1.0) ** 0.5)
         if naked_usd > p.max_unhedged_notional_usd:
             round_.notes.append(f"unhedged {naked_usd:.0f} USD > {p.max_unhedged_notional_usd:.0f} -> abort")
             return _abort(round_, filled, empty, -1.0)
-        if worst_adverse_bps <= -p.adverse_move_stop_bps:
-            round_.notes.append(f"naked leg {worst_adverse_bps:.0f}bps adverse -> abort")
+        if worst_adverse_bps <= -stop_bps:
+            round_.notes.append(f"naked leg {worst_adverse_bps:.0f}bps adverse (stop {stop_bps:.0f}) -> abort")
             return _abort(round_, filled, empty, -1.0)
         # The dislocation we were paid to sell into is gone, or patience ran out:
         # give up on pairing and unwind the filled leg *passively*.
