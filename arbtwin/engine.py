@@ -620,7 +620,8 @@ class TwinEngine:
                             f"orphan position at startup: {pos.venue} {pos.qty_base:+.6f} "
                             f"@ {pos.avg_entry} — entries blocked until flat")
         if not positions and not self.cfg.dry_run:
-            self._alert("warn", "engine", "startup position check returned empty")
+            # a flat account is the normal case, not a warning
+            self._alert("info", "engine", "startup position check: flat (no open positions)")
 
     def _update_orphans(self, snap: dict) -> None:
         """Clear orphans once both legs are flat again (cheap: reuses the snapshot)."""

@@ -41,6 +41,17 @@
 | Lighter 杠杆 | **0x**（截图） | 开仓前需设 3x，否则保证金口径不符 |
 | 双栈坑 | 首次调用报 `50110 ... 2400:8d60:5::1:5774:50ed not in whitelist` | 白名单只有 IPv4；已加 `ARBTWIN_FORCE_IPV4=1`（默认开），强制 IPv4 解析 |
 
+## 1.3 实盘已开启（2026-11-08 22:4x UTC+8）
+
+| 项 | 配置 / 证据 |
+|---|---|
+| 开关 | `.env`: `ARBTWIN_DRY_RUN=0` + `ARBTWIN_FILL_SOURCE=positions`；unit `ExecStart ... --i-know-what-im-doing` |
+| 成交来源 | **持仓增量对账**（`arbtwin/reconcile.py`）：每 poll 读两所持仓，delta→`wave.on_fill`；账面（`state/positions.json`）持久化，启动时 `seed()` 采纳现有持仓，**不会把昨天的仓位当成交** |
+| 启动动作 | 两所 `cancel_all`（清昨日挂单）→ `ledger.seed()` → 正常轮询 |
+| 规模上限 | `ARBTWIN_MAX_NOTIONAL=15`（每腿）、`ARBTWIN_TARGET_LEVERAGE=3`、`MAX_MARGIN_USAGE_PCT=0.35` |
+| 服务 | `active`，MainPID 35591，`dry_run=False` 的 snapshot 每 1.5s 刷新；周一会话关 → 两标的 `BLOCK`（正确） |
+| 门禁（仍生效） | 会话关闭禁开仓、mark 偏离、深度密度、薄盘口、OI 利用率、强平距离、`min_edge` |
+
 ## 2. 当前不能进实盘的硬阻塞（更新）
 
 | # | 阻塞 | 证据 | 解除方式 |
@@ -48,7 +59,7 @@
 | 1 | ~~OKX passphrase 缺失~~ **已解除** | passphrase 已收到；但仍受 IP 白名单限制（见 1.1） | 把 passphrase 写进主机 `.env`（需 SSH 可达） |
 | 2 | ~~Lighter 无抵押品~~ **已解除** | `available_balance = 27.629041`（此前读 `assets[].balance` 误判为 0） | 无需充值；引擎已改用账户级总字段 |
 | 3 | ~~Lighter key 未注册~~ **已解除** | 截图显示 index 4 / 5 均存在，NONCE 1 | 无需操作（公开 API 的 `api_keys` 字段不返回它们，之前误判） |
-| 4 | 本 build 拒绝 live | `_assert_live_is_safe()` 在 `run_forever` 第一行 | 订单状态对账落地前只能 dry-run（见 CHANGELOG v0.2.3/0.2.4） |
+| 4 | ~~本 build 拒绝 live~~ **已解除** | `ARBTWIN_FILL_SOURCE=positions` 接入持仓增量对账 | 需要 OKX+Lighter 凭据齐全（已满足） |
 | 5 | Lighter 杠杆 0x | 交易页截图 `全仓杠杆 0x` | 开仓前需 `update_leverage` 到 3x（SDK 交易未实现，属下一批代码） |
 
 > 两腿策略要求两所都有保证金。任何一侧为 0，引擎的 `_target_notional()` 返回 0，不会下单。

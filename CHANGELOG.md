@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## v0.3.0 — 实盘开启：持仓增量对账（2026-11-08）
+
+- `arbtwin/reconcile.py`：live 的唯一成交来源是**交易所持仓增量**（不是盘口穿越）。
+  账本持久化到 `state/positions.json`；启动 `seed()` 采纳现有仓位（避免把历史仓位当成交）；
+  delta 的方向即买卖方向，价格取交易所 `avg_entry`。
+- `_assert_live_is_safe()`：`ARBTWIN_FILL_SOURCE=positions` + 两所私钥齐全才允许 live，
+  否则仍拒绝启动（并 `exit 2`，不产生崩溃循环）。
+- 启动清理：两所 `cancel_all`，杜绝重启后昨日的 GTC 单继续可成交。
+- **sizing 修正**：之前用交易所最大杠杆（OKX 50–100x）算名义，$59 账户会被算成 $3000；
+  现在用 `limits.target_leverage`（`ARBTWIN_TARGET_LEVERAGE`，默认 3x），并可用
+  `ARBTWIN_MAX_NOTIONAL` 给单腿封顶（首轮 $15）。
+- 平坦账户的启动检查从 warn 降为 info。
+
 ## v0.2.6 — 数据契约透镜：OKX 档位单位、会话标签、收盘窗口（2026-11-08）
 
 - **OKX `/market/books` 的 size 是"张"，不是币**（严重）：`Book` 之前直接当基础币用，
