@@ -2,7 +2,8 @@
 
 > **实盘手册（部署 / 获利前提 / 标的筛选 / 监控 / 故障预案）**：[`docs/DEPLOYMENT.zh.md`](docs/DEPLOYMENT.zh.md)
 > **执行模式**：`config/risk.yaml → strategy: wave`（一轮一清、纯限价、两腿必须同时出清，见 `arbtwin/wave.py`）或 `maker_basis`（旧的两模式引擎）
-> **本次对话完整存档**：[`docs/conversation.html`](docs/conversation.html)
+> **对话存档**：逐字版 [`docs/conversation-full.html`](docs/conversation-full.html)（13 轮问答，用户/助手原文，工具调用折叠）·
+> 摘要版 [`docs/conversation.html`](docs/conversation.html)
 >
 > 一个交易所（OKX，USDT 本位 CEX）与一个 zk-rollup DEX（Lighter，USDC 本位）之间，
 > **同一标的、同一单位**的两个报价之间的机械基差交易。默认只读、默认 dry-run、
