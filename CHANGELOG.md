@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## v0.2.0 — 实盘手册、资金费单位修正、v1 starter universe（2026-11-08）
+
+### 一、单位修正（100 倍错误，必须写死）
+
+Lighter 的 `funding_rate` 是**百分比/小时**（`0.0012` = 0.0012%/h ≈ 10.5% APR），
+OKX 的 `fundingRate` 是**小数/8 小时**（`0.0001` = 0.01%/8h ≈ 10.95% APR）。
+此前 `MarketStats.funding_apr_pct` 用同一口径处理两所，导致 Lighter 的资金费被放大 100 倍
+（3.5% 被算成 350%，并进一步让入场成本被高估 ~8bps）。现在 `venues/lighter.py` 在入口
+统一折算成"小数/区间"，并加了两个回归测试锁死口径。
+
+三方交叉验证：`/api/v1/funding-rates` 里 Lighter 的 BTC 标注 `9.6e-05`（≈10.5% APR，
+与 Binance/Bybit/Hyperliquid 同量级）↔ WS `funding_rate` `0.0012`(%/h) ↔
+`base_interest_rate 0.0100 / 8` —— 三者一致。
+
+### 二、新增能力
+
+- `max_hold_h`（默认 4h）：基差半衰期实测 0.8–1.7h，超时强制被动退出，避免"看着它"。
+- `band_override_bps`：按标的锁定入场阈值（`SymbolState.band_override_bps`），
+  让上线首日的阈值可预期、不随实时 σ 抖动。
+- `config/symbols.starter.yaml`：v1 起步宇宙（SOXL/GRAM/VVV），附 14 天证据字段。
+- `classify_session` 修正：GRAM/VVV/LIT/TRUMP 等 24/7 代币此前被误判为 `us_equity`，
+  会导致夜间锚冻结、引擎退化成只减仓。
+- `docs/DEPLOYMENT.zh.md`：核心理念（赚什么钱 / 为何成立 / 黑天鹅与对应架构）、
+  v1 参数、三阶段上线、监控阈值、故障预案。
+
+### 三、实盘口径（14 天实测，用于校验）
+
+| 标的 | 基差 σ | p95 | ≥12bps 小时占比 | 半衰期 | 资金费中位年化 | 1% 深度 |
+|---|---:|---:|---:|---:|---:|---:|
+| SOXL | 6.34 | 10.8 | 4.5% | 0.76h | 28% | $4.55M |
+| GRAM | 7.38 | 15.6 | 9.0% | 0.86h | 10.5% | — |
+| VVV | 5.72 | 11.4 | 4.5% | 1.70h | 14.4% | — |
+
+保守预期（1 次/天/标的、净 3–6bps）对 $2,000 权益约年化 5%–15%；乐观（2 次/天、净 6–8bps）
+15%–35%。**MSTR 因 2026-11-11 MSCI 指数决定被排除**（事件风险，不是我们要赚的钱）。
+
 ## v0.1.0 — OKX ↔ Lighter 双塔基差引擎首版（2026-11-08）
 
 首个可运行版本：把 @totofdn 近 21 条推文里可工程化的 8 条结论（P0-1 … P2-8）
@@ -64,8 +100,8 @@
 - **`monitor.py`**：8 个监控信号、JSONL 落盘、可选 webhook。
 - **`backtest/replay.py`**：因果回放（t 决策 → t+1 成交，费用双边计入）+ walk-forward 分折。
 - **资金费计入定价**：`funding_cost_bps = carry/8760×1e4×expected_hold_h`，方向相关的净 carry
-  （Lighter 小时结算、OKX 8 小时结算分别年化）。实测 Lighter 股票类 perp 盘中 `0.04%/h`
-  （350% APR）——2 小时持仓即 8bps，必须计价而不是当成"可以忽略的细节"。
+  （Lighter 小时结算、OKX 8 小时结算分别年化）。实测 14 天中位：权益类 3.5%、加密类
+  10.5%、SOXL 28%（v0.2.0 修正了此处的 100 倍单位错误，见上）。
 - **CLI**：`doctor / screen / monitor / run / backtest / calibrate`；`run` 在非 dry-run 时
   必须显式 `--i-know-what-im-doing`。
 - **46 个纯逻辑测试**，覆盖校准三态、退化带宽、费率口径、机制门槛、矩阵方向、

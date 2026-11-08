@@ -1,0 +1,67 @@
+generated_at: '2026-11-08T16:20:00Z'
+note: 'v1 starter universe (widest 14d basis + deepest book). Regenerate: arbtwin
+  screen --only SOXL,GRAM,VVV. MSTR deliberately excluded: MSCI index decision 2026-11-11
+  (event risk).'
+universe:
+  candidates: 12
+  approved: 3
+  rejected: 0
+approved:
+- symbol: SOXL
+  unit_ratio: 0.9987635
+  sigma_1h_bps: 244.14
+  basis_sigma_bps: 6.34
+  band_bps: 13.74
+  session: us_equity
+  preferred_mode: dual_maker
+  notes:
+    ratio_cv_pct: 0.0687
+    return_corr: 0.99955
+    score: 0.31
+    basis_p95_bps: 13.71
+    fill_probability: 0.047
+    basis14d_sig_bps: 6.34
+    basis14d_p95_bps: 10.8
+    basis14d_max_bps: 34.8
+    basis14d_pct_hours_ge_12bps: 0.045
+    halflife_h: 0.76
+  band_override_bps: 12.7
+- symbol: VVV
+  unit_ratio: 1.00028217
+  sigma_1h_bps: 125.14
+  basis_sigma_bps: 5.72
+  band_bps: 11.98
+  session: crypto
+  preferred_mode: dual_maker
+  notes:
+    ratio_cv_pct: 0.0599
+    return_corr: 0.99934
+    score: 0.3
+    basis_p95_bps: 12.38
+    fill_probability: 0.057
+    basis14d_sig_bps: 5.72
+    basis14d_p95_bps: 11.4
+    basis14d_max_bps: 16.8
+    basis14d_pct_hours_ge_12bps: 0.045
+    halflife_h: 1.7
+  band_override_bps: 12.0
+- symbol: GRAM
+  unit_ratio: 1.00110561
+  sigma_1h_bps: 56.82
+  basis_sigma_bps: 7.38
+  band_bps: 14.97
+  session: crypto
+  preferred_mode: dual_maker
+  notes:
+    ratio_cv_pct: 0.0749
+    return_corr: 0.99129
+    score: 0.54
+    basis_p95_bps: 15.58
+    fill_probability: 0.063
+    basis14d_sig_bps: 7.38
+    basis14d_p95_bps: 15.6
+    basis14d_max_bps: 30.8
+    basis14d_pct_hours_ge_12bps: 0.092
+    halflife_h: 0.9
+  band_override_bps: 14.8
+rejected: []

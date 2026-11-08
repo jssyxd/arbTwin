@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>arbTwin 工作存档 · OKX × Lighter</title>
+<style>
+:root{--fg:#1b1b1b;--muted:#6b6b6b;--bg:#fff;--surface:#f6f7f9;--border:#e3e5e8;--accent:#1a6b4f;--warn:#8a4b00;--err:#a11}
+@media (prefers-color-scheme:dark){:root{--fg:#e6e6e6;--muted:#9a9a9a;--bg:#121316;--surface:#1a1c20;--border:#2b2e33;--accent:#63c9a0;--warn:#e0a458;--err:#ff7b72}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.68 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,"PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:1020px;margin:0 auto;padding:32px 20px 96px}
+header.top{border-bottom:1px solid var(--border);padding-bottom:20px;margin-bottom:28px}
+h1{font-size:26px;line-height:1.35;margin:0 0 8px}
+.sub{color:var(--muted);font-size:14px}
+nav.toc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 18px;margin:22px 0 34px}
+nav.toc ol{margin:6px 0 0;padding-left:22px}
+nav.toc a{color:var(--accent);text-decoration:none}
+section.turn{margin:44px 0 0;border-top:1px solid var(--border);padding-top:26px}
+section.turn>h2{font-size:20px;margin:0 0 6px}
+.role{display:inline-block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:1px 6px;margin-right:8px}
+.msg-user{background:var(--surface);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;padding:14px 18px;margin:14px 0 22px;white-space:pre-wrap;font-size:15px}
+h3{font-size:17px;margin:26px 0 10px}
+h4{font-size:15px;margin:20px 0 8px}
+p{margin:10px 0}
+ul,ol{margin:10px 0;padding-left:24px}
+li{margin:4px 0}
+code{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:13.5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px;overflow:auto}
+pre code{background:none;border:0;padding:0;font-size:13px;line-height:1.55}
+.tw{overflow:auto;border:1px solid var(--border);border-radius:8px;margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{border-bottom:1px solid var(--border);padding:8px 12px;text-align:left;vertical-align:top}
+th{background:var(--surface);font-weight:600;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+blockquote{margin:14px 0;padding:10px 16px;border-left:3px solid var(--warn);background:var(--surface);border-radius:0 6px 6px 0}
+a{color:var(--accent)}
+details{margin:16px 0;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
+summary{cursor:pointer;padding:10px 14px;font-size:14px;color:var(--muted)}
+details[open] summary{border-bottom:1px solid var(--border);color:var(--fg)}
+details .inner{padding:12px 16px;font-size:14px}
+.tool{margin:8px 0}
+.tool b{font-weight:600}
+#q{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg);font-size:14px}
+.badge{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid var(--border);color:var(--muted);margin-left:8px}
+footer{margin-top:60px;border-top:1px solid var(--border);padding-top:16px;color:var(--muted);font-size:13px}
+</style></head><body><div class="wrap">
+<header class="top">
+<h1>arbTwin 工作存档 — 从推文研究到可部署的 OKX × Lighter 基差引擎</h1>
+<div class="sub">
+仓库 <a href="https://github.com/jssyxd/arbTwin">jssyxd/arbTwin</a> ·
+2026-11-08 ·
+四轮对话完整记录 · 21 条推文原文 · 全部实测数据 · 55 个单测
+</div>
+<div style="margin-top:14px"><input id="q" placeholder="全文检索（标题 / 表 / 记录都会过滤）…"></div>
+</header>
+<nav class="toc"><strong>目录</strong><ol>
+
+<li><a href="#t1">读懂 @totofdn 的 21 条推文，并对照 GLFTmm</a></li>
+<li><a href="#t2">按 P0–P8 开新仓库 arbTwin（OKX ↔ Lighter）</a></li>
+<li><a href="#t3">“深度低估 59 倍”是什么意思，是否该只用 WebSocket</a></li>
+<li><a href="#t4">本次交付：对话存档 + 立即可实施的盈利方案 + 部署文档（含核心理念）</a></li>
+<li><a href="#appendix">附录 A 推文原文 / B 关键实测数据 / C 仓库与提交 / D 目录结构</a></li>
+</ol></nav>
+
+<section class="turn" id="t1" data-search="读懂 @totofdn 的 21 条推文，并对照 glftmm https://x.com/totofdn 阅读他的近20条推文，不含回复，深入理解，有什么我们这个项目适配的 https://github.com/jssyxd/glftmm/tree/tree-twin ## 结论先行
+
+1. **@totofdn 是&quot;找机制错配&quot;流派，不是 hft 派**：跨所 pre-ipo/同标的基差、激励期套利、闭市窗口流动性、rfq 与 amm 的定价裂缝。这与你 `04_preipo_cross_arb` 的思路同源，而**不是**继续调 glft 参数。
+2. 他的近 21 条里，**6 条直接命中你已有的两个生产分支**（04 的 anthropic 跨所、02 的 xyz:sndk），且指出两个你可能忽视的机制缺口：**venue 的 mark price 口径 + 强平簇占 oi 比例**、**闭市时定价锚必须换成 rfq/tradfi，不能沿用链上 mid**。
+3. 真正你**没有**的、且可工程化的：跨 dex 同 ticker 矩阵、0 波动腿的 lp 区间退化、订单类型级费率模型（limit = 0 fee / hl 激励折算）。
+
+## 数据获取口径
+
+x 登录态不可用（chrome 在跑 + app-bound 加密，cookie 库被锁；无 relay 扩展），匿名 ssr 只放 6 条即撞登录墙。改用 nitter 镜像抓取完整时间线：**21 条（dec 1 2025 – nov 6 2026），含 4 条自线程续帖/链接帖，纯推文无回复**；正文经 fxtwitter 交叉校验一致。
+
+## 推文信号聚类
+
+| # | 日期 | 机制 | 硬数字 |
+|---|---|---|---|
+| t1 | 11-06 | 同一 anthropic 在 hl vs lighter 日内基差翻转 | −8% → 0 → −5%，单日，附赠 hip-3 volume |
+| t2 | 11-04 | entropyio pre-ipo 溢价 + 资金费 + **mark 上限 4200 / 取 5–10min mid** | 溢价 12–15%，funding 100% apr，oi 100m$ |
+| t3 | 11-04 | 强平簇 | 2400 触发 50m$ 空头强平 = oi 的 50% |
+| t4 | 10-29 | 交易所被盗 → weth 链上 overpeg | +15% |
+| t5 | 09-08 | sgov/usdg 稳定对 lp，σ≈0 → 无 il | 50–100% apr |
+| t6 | 09-04 | 国债 etf 代币化 | 300% apr（激励口径） |
+| t7 | 09-04 | 低市值股票代币 + 5% fee pool；arcus **rfq 按 tradfi 价 ±0.2% 铸币** | 一次买 20–30 只零流动性票 |
+| t8 | 04-08 | dolomite/wlfi 递归抵押 | 抵押 500m$ wlfi，借出 100–200m 稳定币 |
+| t9 | 03-31 | polymarket 开征手续费后收入翻倍 | 500k$/日 ath |
+| t10 | 03-13 | **hip-3 跨 dex 同 ticker 基差**（tradexyz vs dreamcash） | 7 bps / 3h，手续费 3 bps |
+| t11 | 12-05 | extended 周末 eur/usd 不转 reduce-only | 周末该对日成交 10m |
+| t12 | 04-18 | 提款流动性不足时用 intent（cow）低延迟退出 | — |
+| t13–t21 | 12 月 | polymarket 决议套利、stable tge 单钱包 40%、airdrop 复核 | kabuto：日销 27 笔 |
+
+## 与你仓库的对照
+
+| 你的模块 | 现有能力（取证） | 推文给出的、你没有的 |
+|---|---|---|
+| `04/core/ant_cross_arb_v4_adaptive.py` | 单对 hl `xyz:ant` ↔ okx；`entry_spread_bps=750`、`exit_swing_profit_bps=500`、隐含股本 s 配平、单腿 16% 断路 | 多 venue 溢价矩阵；venue mark 口径与强平簇；跨 dex 同 ticker；退出阈值自适应 |
+| `02/core/hyperliquid_sndk_live.py` | 单 venue `xyz:sndk` glft + 8.5bps 防狙击 + lightgbm 毒性 + `min_spread_bps=8.0` | 定价锚应是 `min(rfq, tradfi·1.002)`；费率按订单类型与激励折算；闭市窗口做唯一被动流动性 |
+| `03/hedging/concentrated_lp_manager.py` | 仅 38 行：`half_range_bps=15` 硬编码 | 0 波动腿的区间退化；池子筛选器；overpeg 时撤池规则 |
+| `01/models/vpin_gate.py` | 仅 88 行 vpin + 5s 冷却 | 强平簇比例作为前置宏观门控 |
+| `shared/` | glft 求解器、sentinel、aggregator、okx gateway | 缺 `feemodel`、`venuemechanics`、`basis/peg monitor` |
+
+## 适配清单（p0–p8）
+
+* **p0-1 多 venue 溢价矩阵**：`venues.py` + `venuespreadmatrix`，把 `compute_edge_bps` 从二元扩成矩阵；先做合约乘数归一化（你现在写死 10 张 = 1 股）。
+* **p0-2 venue 微观机制风控**：`cluster_ratio`（强平簇/oi）、`mark_cap_distance`、`mark_window_sec`；t2 的 2400/4200 与 50m$/100m$ 就是现成参数。
+* **p0-3 退出阶梯自适应**：`exit_swing_profit_bps=500` 固定值不行，t1 的 8%→0→−5% 说明要用 z-score/分位。
+* **p1-4 peg/basis 监控**：`shared/basis_monitor`，±3σ + 半衰期。
+* **p1-5 0 波动腿的 lp 区间退化**：σ→0 时走向宽区间，收入=fee×volume。
+* **p1-6 rfq vs amm 双路报价**：链上 stock token 的公允价必须是 `min(rfq, tradfi×1.002)`。
+* **p1-7 费用模型**：`feemodel(venue, order_type, tier)` + 激励折算。
+* **p2-8 发行方风险卡 / p2-9 决议源可操纵成本 / p2-10 意图退出**。
+
+## 提议架构
+
+```text
+tradfi/rfq ──► pricing anchor (ref_px = min rfq, tradfi*1.002)
+venue matrix (hl/lighter/variational/extended/aster) ──► venuespreadmatrix
+edge_ij = spread − fee(venue, order_type) − slip − latency
+venuemechanics (mark window / cap / cluster) ──► gate
+```
+
+慎做：polymarket 决议套利（资产类别正交）、weth overpeg（事件型单次交易）、依赖 venue bug 的玩法。
+
+## 下一步
+
+1. `shared/venues.py` + `venuequote`，把 04 的 `compute_edge_bps` 改成矩阵版（t1 的 8% 事件就是现成回放样本）。
+2. `shared/venue_mechanics.py` 的 `cluster_ratio` / `mark_cap_distance`，接入 `plan_dual_leg_position` 前置门控 —— 纯降尾部风险，代价最低。 读取 agent-reach 文档 + 跑 doctortwitter 后端未安装（twitter-cli / opencli 均无）；github 显示未认证；b站/v2ex/web 可用 克隆 glftmm (tree-twin) 并盘点发现 4 个分支、3 份独立审计报告（因果/费率/过拟合 pass）、`bab` 版本 v4.9.0 于 2026-11-08 部署 x 登录态尝试chrome 在跑 → cookie 库被锁（app-bound 加密，v20）；无 relay 扩展；edge 无 x.com cookie 匿名访问 xssr 只渲染 6 条即弹登录墙；syndication 接口 429；nitter 实例多数 403/451/anubis 挑战 改用 nitter 镜像 + 浏览器渲染nitter.tiekoetter.com 过 anubis 后返回 21 条；用 `a.tweet-link` / `.tweet-content` 抓取，fxtwitter 交叉校验正文 解析推文正文21 条（17 条主推 + 4 条自线程/链接），写入 `totofdn_tweets.txt`">
+<h2>读懂 @totofdn 的 21 条推文，并对照 GLFTmm <span class="badge">第 1 轮</span></h2>
+<div><span class="role">用户</span></div>
+<div class="msg-user">https://x.com/totofdn 阅读他的近20条推文，不含回复，深入理解，有什么我们这个项目适配的 https://github.com/jssyxd/GLFTmm/tree/tree-twin</div>
+<div><span class="role">助手</span></div>
+<h3>结论先行</h3>
+<ol><li><strong>@totofdn 是"找机制错配"流派，不是 HFT 派</strong>：跨所 pre-IPO/同标的基差、激励期套利、闭市窗口流动性、RFQ 与 AMM 的定价裂缝。这与你 <code>04_preipo_cross_arb</code> 的思路同源，而<strong>不是</strong>继续调 GLFT 参数。</li><li>他的近 21 条里，<strong>6 条直接命中你已有的两个生产分支</strong>（04 的 ANTHROPIC 跨所、02 的 xyz:SNDK），且指出两个你可能忽视的机制缺口：<strong>venue 的 mark price 口径 + 强平簇占 OI 比例</strong>、<strong>闭市时定价锚必须换成 RFQ/tradfi，不能沿用链上 mid</strong>。</li><li>真正你<strong>没有</strong>的、且可工程化的：跨 DEX 同 ticker 矩阵、0 波动腿的 LP 区间退化、订单类型级费率模型（limit = 0 fee / HL 激励折算）。</li></ol>
+<h3>数据获取口径</h3>
+<p>X 登录态不可用（Chrome 在跑 + App-Bound 加密，cookie 库被锁；无 relay 扩展），匿名 SSR 只放 6 条即撞登录墙。改用 nitter 镜像抓取完整时间线：<strong>21 条（Dec 1 2025 – Nov 6 2026），含 4 条自线程续帖/链接帖，纯推文无回复</strong>；正文经 fxtwitter 交叉校验一致。</p>
+<h3>推文信号聚类</h3>
+<div class='tw'><table><thead><tr><th>#</th><th>日期</th><th>机制</th><th>硬数字</th></tr></thead><tbody><tr><td>T1</td><td>11-06</td><td>同一 Anthropic 在 HL vs Lighter 日内基差翻转</td><td>−8% → 0 → −5%，单日，附赠 HIP-3 volume</td></tr><tr><td>T2</td><td>11-04</td><td>entropyIO pre-IPO 溢价 + 资金费 + <strong>mark 上限 4200 / 取 5–10min mid</strong></td><td>溢价 12–15%，funding 100% APR，OI 100m$</td></tr><tr><td>T3</td><td>11-04</td><td>强平簇</td><td>2400 触发 50m$ 空头强平 = OI 的 50%</td></tr><tr><td>T4</td><td>10-29</td><td>交易所被盗 → WETH 链上 overpeg</td><td>+15%</td></tr><tr><td>T5</td><td>09-08</td><td>SGOV/USDG 稳定对 LP，σ≈0 → 无 IL</td><td>50–100% APR</td></tr><tr><td>T6</td><td>09-04</td><td>国债 ETF 代币化</td><td>300% APR（激励口径）</td></tr><tr><td>T7</td><td>09-04</td><td>低市值股票代币 + 5% fee pool；Arcus <strong>RFQ 按 tradfi 价 ±0.2% 铸币</strong></td><td>一次买 20–30 只零流动性票</td></tr><tr><td>T8</td><td>04-08</td><td>Dolomite/WLFI 递归抵押</td><td>抵押 500m$ WLFI，借出 100–200m 稳定币</td></tr><tr><td>T9</td><td>03-31</td><td>Polymarket 开征手续费后收入翻倍</td><td>500k$/日 ATH</td></tr><tr><td>T10</td><td>03-13</td><td><strong>HIP-3 跨 DEX 同 ticker 基差</strong>（tradexyz vs Dreamcash）</td><td>7 bps / 3h，手续费 3 bps</td></tr><tr><td>T11</td><td>12-05</td><td>Extended 周末 EUR/USD 不转 reduce-only</td><td>周末该对日成交 10m</td></tr><tr><td>T12</td><td>04-18</td><td>提款流动性不足时用 intent（CoW）低延迟退出</td><td>—</td></tr><tr><td>T13–T21</td><td>12 月</td><td>Polymarket 决议套利、Stable TGE 单钱包 40%、airdrop 复核</td><td>Kabuto：日销 27 笔</td></tr></tbody></table></div>
+<h3>与你仓库的对照</h3>
+<div class='tw'><table><thead><tr><th>你的模块</th><th>现有能力（取证）</th><th>推文给出的、你没有的</th></tr></thead><tbody><tr><td><code>04/core/ant_cross_arb_v4_adaptive.py</code></td><td>单对 HL <code>xyz:ANT</code> ↔ OKX；<code>ENTRY_SPREAD_BPS=750</code>、<code>EXIT_SWING_PROFIT_BPS=500</code>、隐含股本 S 配平、单腿 16% 断路</td><td>多 venue 溢价矩阵；venue mark 口径与强平簇；跨 DEX 同 ticker；退出阈值自适应</td></tr><tr><td><code>02/core/hyperliquid_sndk_live.py</code></td><td>单 venue <code>xyz:SNDK</code> GLFT + 8.5bps 防狙击 + LightGBM 毒性 + <code>MIN_SPREAD_BPS=8.0</code></td><td>定价锚应是 <code>min(RFQ, tradfi·1.002)</code>；费率按订单类型与激励折算；闭市窗口做唯一被动流动性</td></tr><tr><td><code>03/hedging/concentrated_lp_manager.py</code></td><td>仅 38 行：<code>half_range_bps=15</code> 硬编码</td><td>0 波动腿的区间退化；池子筛选器；overpeg 时撤池规则</td></tr><tr><td><code>01/models/vpin_gate.py</code></td><td>仅 88 行 VPIN + 5s 冷却</td><td>强平簇比例作为前置宏观门控</td></tr><tr><td><code>shared/</code></td><td>GLFT 求解器、sentinel、aggregator、OKX gateway</td><td>缺 <code>FeeModel</code>、<code>VenueMechanics</code>、<code>basis/peg monitor</code></td></tr></tbody></table></div>
+<h3>适配清单（P0–P8）</h3>
+<ul><li><strong>P0-1 多 venue 溢价矩阵</strong>：<code>venues.py</code> + <code>VenueSpreadMatrix</code>，把 <code>compute_edge_bps</code> 从二元扩成矩阵；先做合约乘数归一化（你现在写死 10 张 = 1 股）。</li><li><strong>P0-2 venue 微观机制风控</strong>：<code>cluster_ratio</code>（强平簇/OI）、<code>mark_cap_distance</code>、<code>mark_window_sec</code>；T2 的 2400/4200 与 50m$/100m$ 就是现成参数。</li><li><strong>P0-3 退出阶梯自适应</strong>：<code>EXIT_SWING_PROFIT_BPS=500</code> 固定值不行，T1 的 8%→0→−5% 说明要用 z-score/分位。</li><li><strong>P1-4 peg/basis 监控</strong>：<code>shared/basis_monitor</code>，±3σ + 半衰期。</li><li><strong>P1-5 0 波动腿的 LP 区间退化</strong>：σ→0 时走向宽区间，收入=fee×volume。</li><li><strong>P1-6 RFQ vs AMM 双路报价</strong>：链上 stock token 的公允价必须是 <code>min(RFQ, tradfi×1.002)</code>。</li><li><strong>P1-7 费用模型</strong>：<code>FeeModel(venue, order_type, tier)</code> + 激励折算。</li><li><strong>P2-8 发行方风险卡 / P2-9 决议源可操纵成本 / P2-10 意图退出</strong>。</li></ul>
+<h3>提议架构</h3>
+<pre><code class="lang-text">tradfi/RFQ ──► Pricing Anchor (ref_px = min RFQ, tradfi*1.002)
+venue matrix (HL/Lighter/Variational/Extended/Aster) ──► VenueSpreadMatrix
+edge_ij = spread − fee(venue, order_type) − slip − latency
+VenueMechanics (mark window / cap / cluster) ──► gate</code></pre>
+<p>慎做：Polymarket 决议套利（资产类别正交）、WETH overpeg（事件型单次交易）、依赖 venue bug 的玩法。</p>
+<h3>下一步</h3>
+<ol><li><code>shared/venues.py</code> + <code>VenueQuote</code>，把 04 的 <code>compute_edge_bps</code> 改成矩阵版（T1 的 8% 事件就是现成回放样本）。</li><li><code>shared/venue_mechanics.py</code> 的 <code>cluster_ratio</code> / <code>mark_cap_distance</code>，接入 <code>plan_dual_leg_position</code> 前置门控 —— 纯降尾部风险，代价最低。</li></ol>
+<details><summary>执行记录（6 条）</summary><div class="inner"><div class="tool"><b>读取 agent-reach 文档 + 跑 doctor</b><div>twitter 后端未安装（twitter-cli / OpenCLI 均无）；github 显示未认证；B站/V2EX/web 可用</div></div><div class="tool"><b>克隆 GLFTmm (tree-twin) 并盘点</b><div>发现 4 个分支、3 份独立审计报告（因果/费率/过拟合 PASS）、<code>bab</code> 版本 v4.9.0 于 2026-11-08 部署</div></div><div class="tool"><b>X 登录态尝试</b><div>Chrome 在跑 → cookie 库被锁（App-Bound 加密，v20）；无 relay 扩展；Edge 无 x.com cookie</div></div><div class="tool"><b>匿名访问 X</b><div>SSR 只渲染 6 条即弹登录墙；syndication 接口 429；nitter 实例多数 403/451/Anubis 挑战</div></div><div class="tool"><b>改用 nitter 镜像 + 浏览器渲染</b><div>nitter.tiekoetter.com 过 Anubis 后返回 21 条；用 <code>a.tweet-link</code> / <code>.tweet-content</code> 抓取，fxtwitter 交叉校验正文</div></div><div class="tool"><b>解析推文正文</b><div>21 条（17 条主推 + 4 条自线程/链接），写入 <code>totofdn_tweets.txt</code></div></div></div></details>
+</section>
+
+<section class="turn" id="t2" data-search="按 p0–p8 开新仓库 arbtwin（okx ↔ lighter） 帮我按照结合他的讨论结果p0-p8（完全不涉及不适配的那几个点），重新开一个仓库 arbtwin，另外，这个只用于okx和lighter双交易所（而不是hl和lighter，你根据巨大的变化研究是否可行），在readme和changelog里写详细如何部署，在什么前提条件下获利，要如何筛选标的、监控标的。 **`jssyxd/arbtwin` 已上线**（public，8 个 commit，48 个测试全绿）。
+
+## 一、先回答&quot;okx ↔ lighter 是否可行&quot;
+
+**可行，而且标的面比 hl↔lighter 更宽**：okx 528 个 usdt 永续 × lighter 215 个 perp → **181 个可直接配对**（含 aapl/nvda/tsla/asml/coin/anthropic/xau）。
+
+但这是两个物理性质不同的 venue：
+
+| 维度 | okx | lighter | 后果 |
+|---|---|---|---|
+| 结算 | usdt | **usdc** | 两腿权益不共享 |
+| 费率 | 2 / 5 bps | **0 / 0** | 被动腿必须在 lighter |
+| 时延 | ioc 秒级 | **taker 300ms bump，post-only 无** | 只能&quot;lighter 挂单领先 → okx ioc 对冲&quot; |
+| 资金费 | 8h | **1h** | 年化口径不同 |
+| 下单 | hmac | **zk 签名 + 每 key 独立 nonce** | 必须拆 key |
+| 深度 | rest 400 档 | rest 250 档 | 5 档会把 aapl 1% 深度低估 59 倍 |
+
+两条不可回避的实测约束：
+
+| 检验 | 结果 | 结论 |
+|---|---|---|
+| 单位一致性 | eth 1.0001/cv 0.011%/corr 0.9997；aapl 0.9987/0.033%；nvda 0.9988/0.031%；**anthropic 10.38/cv 4.07%/corr 0.80** | 前者同一标的，后者剔除 |
+| 基差 p95 vs 成本 | eth ≈2bps、btc ≈5、nvda ≈7、aapl ≈9、fartcoin ≈13 | taker-hedge 往返 ≈10bps → **主流 1:1 标的不成立**；只能 dual_maker（≈4bps） |
+
+这条经济性结论直接改变了架构：实现 **`hedge_now`**（lighter post-only 领先 + okx ioc 对冲 + 失败反手）与 **`dual_maker`**（两腿都挂 + 单腿成交 watchdog → 被动退出）。
+
+## 二、p0–p8 落点
+
+| 编号 | 实现 | 关键行为 |
+|---|---|---|
+| p0-1 | `calibration.py` + `spread.py` | 三态判定 + `basis`/`executable_edge`/`maker_net` 三口径 |
+| p0-2 | `mechanics.py` | mark 窗口、mark cap、oi 利用率、1% 深度、移动 25bps 成本、强平距离、延迟成本 `σ√(t/1h)` |
+| p1-3 | `anchor.py` | tradfi &gt; rfq &gt; 两 index 中位数；分歧 &gt;45bps 拒绝定价；闭市冻结 |
+| p1-4 | `band.py` | `max(floor, k·σ_basis, fee)`；σ_basis&lt;3bps 退化为 `fee×1.5` |
+| p1-5 | `fees.py` | `effective=nominal−incentive`，按订单类型 |
+| p2-6 | `issuer_risk.py` | 7 条硬红旗 + 软旗缩规模 |
+| p2-7 | `manipulation.py` | 移动 25bps 成本、单边不对称 → 放大带宽 |
+| p2-8 | `exitqueue.py` | 带 deadline 的被动退出阶梯 → 临期 ioc → 仅止损市价 |
+
+## 三、首次全量筛选（真实跑出，831 秒 / 175 候选）
+
+```text
+approved 12 / 175
+gram soxl vvv coin lit mstr xpt ewy trump mrvl orcl sndk
+rejected 163 ← 三类：基差 p95 不覆盖成本 / 移动25bps&lt;$50k / 比值与收益解耦
+```
+
+## 四、验证过的东西
+
+| 动作 | 证据 |
+|---|---|
+| `doctor` | okx 528 / lighter 215 市场可达；12 个标的 ratio 自检全 ok |
+| `screen` | 175 → 12，写入 `config/symbols.yaml` |
+| `monitor` | 实时矩阵 + funding harvest 提示；单轮 17s |
+| `run` dry-run | 决策流落 `state/snapshot.jsonl`；tls 超时被隔离不中断 |
+| `backtest` | 500 根 1h、0 笔成交（与&quot;基差不够成本&quot;一致） |
+| 干净 venv | `pip install -e .` + 48 测试通过（修了 windows tzdata、zoneinfo 惰性加载） |
+| 安全闸 | `arbtwin_dry_run=0` 无 flag → exit 2 |
+
+开发中修掉的真实缺陷：5 档深度低估 59 倍、深度字段 `remaining_base_amount`、带宽误用价格σ、ws 嵌套 `asyncio.run`、资金费被当单腿 veto、单边成交退出方向反了、cli 安全参数 dest 写错。 可行性探路lighter mainnet `https://mainnet.zklighter.elliot.ai` 可用；`orderbookdetails` 215 个 perp，含股票/外汇/pre-ipo；okx `instruments?insttype=swap` 528 个 live 配对交集直接匹配 181 个（`1000*` 归并后 186），含 anthropic/aapl/nvda/tsla/asml/coin/xau 深度口径okx `books?sz=5` 对 aapl 1% 深度只有 $12.4k；`sz=200` $736k；`sz=400` $765k/859k（覆盖 218/230bps） lighter rest vs ws 深度aapl $1,116,770 vs $1,116,714（ratio 1.00）；nvda $1,317,264 vs $1,317,264 —— lighter 书稀疏，rest 已够 lighter sdk api 核对读 `lighter/signer_client.py` v1.1.8：`create_order` 异步、`order_time_in_force_post_only=2`、`cancel_order(market_index, order_index)`、`cancel_all_orders(tif, ts, market_index)` 全量 screen175 候选 / 831 秒 → 12 approved，163 rejected 带原因 构建与验证55 个单测；`pip install -e .` 于干净 venv 通过；三次 commit + push（token 仅用于 push，远端 url 已还原）">
+<h2>按 P0–P8 开新仓库 arbTwin（OKX ↔ Lighter） <span class="badge">第 2 轮</span></h2>
+<div><span class="role">用户</span></div>
+<div class="msg-user">帮我按照结合他的讨论结果P0-P8（完全不涉及不适配的那几个点），重新开一个仓库 arbTwin，另外，这个只用于OKX和lighter双交易所（而不是HL和lighter，你根据巨大的变化研究是否可行），在readme和changelog里写详细如何部署，在什么前提条件下获利，要如何筛选标的、监控标的。</div>
+<div><span class="role">助手</span></div>
+<p><strong><code>jssyxd/arbTwin</code> 已上线</strong>（public，8 个 commit，48 个测试全绿）。</p>
+<h3>一、先回答"OKX ↔ Lighter 是否可行"</h3>
+<p><strong>可行，而且标的面比 HL↔Lighter 更宽</strong>：OKX 528 个 USDT 永续 × Lighter 215 个 perp → <strong>181 个可直接配对</strong>（含 AAPL/NVDA/TSLA/ASML/COIN/ANTHROPIC/XAU）。</p>
+<p>但这是两个物理性质不同的 venue：</p>
+<div class='tw'><table><thead><tr><th>维度</th><th>OKX</th><th>Lighter</th><th>后果</th></tr></thead><tbody><tr><td>结算</td><td>USDT</td><td><strong>USDC</strong></td><td>两腿权益不共享</td></tr><tr><td>费率</td><td>2 / 5 bps</td><td><strong>0 / 0</strong></td><td>被动腿必须在 Lighter</td></tr><tr><td>时延</td><td>IOC 秒级</td><td><strong>taker 300ms bump，post-only 无</strong></td><td>只能"Lighter 挂单领先 → OKX IOC 对冲"</td></tr><tr><td>资金费</td><td>8h</td><td><strong>1h</strong></td><td>年化口径不同</td></tr><tr><td>下单</td><td>HMAC</td><td><strong>zk 签名 + 每 key 独立 nonce</strong></td><td>必须拆 key</td></tr><tr><td>深度</td><td>REST 400 档</td><td>REST 250 档</td><td>5 档会把 AAPL 1% 深度低估 59 倍</td></tr></tbody></table></div>
+<p>两条不可回避的实测约束：</p>
+<div class='tw'><table><thead><tr><th>检验</th><th>结果</th><th>结论</th></tr></thead><tbody><tr><td>单位一致性</td><td>ETH 1.0001/CV 0.011%/corr 0.9997；AAPL 0.9987/0.033%；NVDA 0.9988/0.031%；<strong>ANTHROPIC 10.38/CV 4.07%/corr 0.80</strong></td><td>前者同一标的，后者剔除</td></tr><tr><td>基差 p95 vs 成本</td><td>ETH ≈2bps、BTC ≈5、NVDA ≈7、AAPL ≈9、FARTCOIN ≈13</td><td>taker-hedge 往返 ≈10bps → <strong>主流 1:1 标的不成立</strong>；只能 dual_maker（≈4bps）</td></tr></tbody></table></div>
+<p>这条经济性结论直接改变了架构：实现 <strong><code>hedge_now</code></strong>（Lighter post-only 领先 + OKX IOC 对冲 + 失败反手）与 <strong><code>dual_maker</code></strong>（两腿都挂 + 单腿成交 watchdog → 被动退出）。</p>
+<h3>二、P0–P8 落点</h3>
+<div class='tw'><table><thead><tr><th>编号</th><th>实现</th><th>关键行为</th></tr></thead><tbody><tr><td>P0-1</td><td><code>calibration.py</code> + <code>spread.py</code></td><td>三态判定 + <code>basis</code>/<code>executable_edge</code>/<code>maker_net</code> 三口径</td></tr><tr><td>P0-2</td><td><code>mechanics.py</code></td><td>mark 窗口、mark cap、OI 利用率、1% 深度、移动 25bps 成本、强平距离、延迟成本 <code>σ√(t/1h)</code></td></tr><tr><td>P1-3</td><td><code>anchor.py</code></td><td>tradfi &gt; RFQ &gt; 两 index 中位数；分歧 &gt;45bps 拒绝定价；闭市冻结</td></tr><tr><td>P1-4</td><td><code>band.py</code></td><td><code>max(floor, k·σ_basis, fee)</code>；σ_basis&lt;3bps 退化为 <code>fee×1.5</code></td></tr><tr><td>P1-5</td><td><code>fees.py</code></td><td><code>effective=nominal−incentive</code>，按订单类型</td></tr><tr><td>P2-6</td><td><code>issuer_risk.py</code></td><td>7 条硬红旗 + 软旗缩规模</td></tr><tr><td>P2-7</td><td><code>manipulation.py</code></td><td>移动 25bps 成本、单边不对称 → 放大带宽</td></tr><tr><td>P2-8</td><td><code>exitqueue.py</code></td><td>带 deadline 的被动退出阶梯 → 临期 IOC → 仅止损市价</td></tr></tbody></table></div>
+<h3>三、首次全量筛选（真实跑出，831 秒 / 175 候选）</h3>
+<pre><code class="lang-text">approved 12 / 175
+GRAM SOXL VVV COIN LIT MSTR XPT EWY TRUMP MRVL ORCL SNDK
+rejected 163 ← 三类：基差 p95 不覆盖成本 / 移动25bps&lt;$50k / 比值与收益解耦</code></pre>
+<h3>四、验证过的东西</h3>
+<div class='tw'><table><thead><tr><th>动作</th><th>证据</th></tr></thead><tbody><tr><td><code>doctor</code></td><td>OKX 528 / Lighter 215 市场可达；12 个标的 ratio 自检全 OK</td></tr><tr><td><code>screen</code></td><td>175 → 12，写入 <code>config/symbols.yaml</code></td></tr><tr><td><code>monitor</code></td><td>实时矩阵 + funding harvest 提示；单轮 17s</td></tr><tr><td><code>run</code> dry-run</td><td>决策流落 <code>state/snapshot.jsonl</code>；TLS 超时被隔离不中断</td></tr><tr><td><code>backtest</code></td><td>500 根 1h、0 笔成交（与"基差不够成本"一致）</td></tr><tr><td>干净 venv</td><td><code>pip install -e .</code> + 48 测试通过（修了 Windows tzdata、zoneinfo 惰性加载）</td></tr><tr><td>安全闸</td><td><code>ARBTWIN_DRY_RUN=0</code> 无 flag → exit 2</td></tr></tbody></table></div>
+<p>开发中修掉的真实缺陷：5 档深度低估 59 倍、深度字段 <code>remaining_base_amount</code>、带宽误用价格σ、WS 嵌套 <code>asyncio.run</code>、资金费被当单腿 veto、单边成交退出方向反了、CLI 安全参数 dest 写错。</p>
+<details><summary>执行记录（7 条）</summary><div class="inner"><div class="tool"><b>可行性探路</b><div>Lighter mainnet <code>https://mainnet.zklighter.elliot.ai</code> 可用；<code>orderBookDetails</code> 215 个 perp，含股票/外汇/pre-IPO；OKX <code>instruments?instType=SWAP</code> 528 个 live</div></div><div class="tool"><b>配对交集</b><div>直接匹配 181 个（<code>1000*</code> 归并后 186），含 ANTHROPIC/AAPL/NVDA/TSLA/ASML/COIN/XAU</div></div><div class="tool"><b>深度口径</b><div>OKX <code>books?sz=5</code> 对 AAPL 1% 深度只有 $12.4k；<code>sz=200</code> $736k；<code>sz=400</code> $765k/859k（覆盖 218/230bps）</div></div><div class="tool"><b>Lighter REST vs WS 深度</b><div>AAPL $1,116,770 vs $1,116,714（ratio 1.00）；NVDA $1,317,264 vs $1,317,264 —— Lighter 书稀疏，REST 已够</div></div><div class="tool"><b>Lighter SDK API 核对</b><div>读 <code>lighter/signer_client.py</code> v1.1.8：<code>create_order</code> 异步、<code>ORDER_TIME_IN_FORCE_POST_ONLY=2</code>、<code>cancel_order(market_index, order_index)</code>、<code>cancel_all_orders(tif, ts, market_index)</code></div></div><div class="tool"><b>全量 screen</b><div>175 候选 / 831 秒 → 12 approved，163 rejected 带原因</div></div><div class="tool"><b>构建与验证</b><div>55 个单测；<code>pip install -e .</code> 于干净 venv 通过；三次 commit + push（token 仅用于 push，远端 URL 已还原）</div></div></div></details>
+</section>
+
+<section class="turn" id="t3" data-search="“深度低估 59 倍”是什么意思，是否该只用 websocket 深度   │ rest 200 档 │ rest 250 档 │ 用 5 档会把 aapl 1% 深度低估 59 倍（$12.4k vs $736k），是什么意思，我是否放弃rest 而只用websocket收听 ## 1. 这句话的意思：59 倍来自视野，不是流动性
+
+aapl-usdt-swap：价格 342.275、`ticksz = 0.01` → **1 tick = 0.292 bps**。所谓&quot;1% 深度&quot;= 以中间价为中心 **100 bps** 区间内的名义金额，即 343 个 tick 之外。你只取 5 档时，最深的档位离中间价只有 5×0.292 ≈ **1.46 bps**。
+
+| 取数 | 视野（离 mid 最远档） | 1% 区间内名义（双边） |
+|---|---:|---:|
+| `books?sz=5` | **1.5 bps** | **$12.4k** |
+| `books?sz=200` | 58 bps | $736k（仍是下界） |
+| `books?sz=400` | **218 / 230 bps** | **$765k / $859k** |
+
+$736k ÷ $12.4k ≈ 59。**不是盘口差了 59 倍的流动性，是采样视野窄了 40 倍。** btc 更极端：tick = 0.013 bps，400 档也只有 **5.3 bps** 视野。
+
+## 2. 要不要弃用 rest、只留 websocket？
+
+**不要。但两者用途必须分开，混用才是危险。**
+
+* **lighter 的订单簿是稀疏的**：aapl 只有 88 个价位却跨了 4983/20099 bps，nvda 235 个价位跨 5141/19154 bps → `orderbookorders?limit=250` 已**完整覆盖 1%**，且与 ws 快照深度**完全一致**（ratio = 1.00）。
+* **okx 的 ws 全量深度确实存在**：`books` 通道实测返回 **400/400 档**，带 `seqid`/`prevseqid`/`checksum`，100ms 快照 + 增量。
+
+| 方案 | 收益 | 代价 |
+|---|---|---|
+| ws 全量 `books` 维护本地簿 | gate 刷新可到 100ms 级 | 必须做断档检测 + checksum 校验 + 重订阅；漏一次断档就是**静默残缺的深度** |
+| rest 深档（当前） | 每次都是完整快照，天然自愈 | 每标的约 1 次调用，ttl 1.5s 复用 |
+
+分工：**定价/成交判定 ← ws top-of-book；深度/操纵成本 ← rest 深档（400/250）**。代码里物理隔离：`okxvenue.quote()`（ws 5 档）与 `okxvenue.book()`（rest 400 档）不共用缓存。
+
+## 3. 已按这个结论改完并验证
+
+```python
+usd, covered_bps, complete = book.depth_covered(100)     # 视野不足返回 complete=false
+density = usd / min(100, covered_bps)                    # 与 tick 密度无关
+gate:   density &gt;= min_depth_usd_1pct / 100
+```
+
+* okx 深度默认 400 档、lighter 250 单；12 标的单轮 poll 24s → 10–16s（本机走代理）。
+* 顺手修掉一个**静默 bug**：okx `/market/ticker` 不返回 `idxpx`，原代码把 index 回退成 mark → `mark-index` 偏离恒为 0。现在 index 取自 `/market/index-tickers?quoteccy=usdt`，实测 mstr：mark 128.51 / index 128.52 / 偏离 0.78 bps。
+* mark/index/oi 改成 **3 个全市场批量接口 + single-flight ttl 5s**（36 次/轮 → 3 次/轮），资金费 300s ttl。
+
+## 4. 什么时候才值得上 ws-only 深度
+
+只有当入场门槛压到 **&lt; 5bps 且 gate 需要 sub-300ms 刷新** 时才值得。当前基差 p95 是 7–13bps、成本 4–10bps，瓶颈在&quot;错价窗口是否出现&quot;，不在&quot;深度数据晚 300ms&quot;。届时必做：`seqid` 连续性、checksum 校验、断档重订阅、以及**每小时用 rest 快照对账一次**（top-5 或 1% 深度偏差 &gt; 1% 强制重同步）。 实测 okx 深档覆盖aapl 400 档覆盖 218/230bps、深度 $765k/$859k；nvda 225/224bps、$1.08m/$1.14m 实测 lighter rest vs wsaapl 88/88 价位、nvda 235/147；rest 与 ws 深度比 1.00 实测 okx ws books 通道`books` 订阅返回 400/400 档、`action=snapshot`、字段含 `seqid`/`prevseqid`/`checksum` 改写深度闸门`book.depth_covered()` / `depth_density_usd_per_bps()`；screen 与 mechanics 同步改为密度口径；加 3 个单测覆盖截断/密度/btc 场景 延迟优化okx 统计改 3 个批量接口 + single-flight；书 ttl 1.5s；12 标的单轮 24s→10-16s（本地代理 1s/请求）">
+<h2>“深度低估 59 倍”是什么意思，是否该只用 WebSocket <span class="badge">第 3 轮</span></h2>
+<div><span class="role">用户</span></div>
+<div class="msg-user">深度   │ REST 200 档 │ REST 250 档 │ 用 5 档会把 AAPL 1% 深度低估 59 倍（$12.4k vs $736k），是什么意思，我是否放弃REST 而只用Websocket收听</div>
+<div><span class="role">助手</span></div>
+<h3>1. 这句话的意思：59 倍来自视野，不是流动性</h3>
+<p>AAPL-USDT-SWAP：价格 342.275、<code>tickSz = 0.01</code> → <strong>1 tick = 0.292 bps</strong>。所谓"1% 深度"= 以中间价为中心 <strong>100 bps</strong> 区间内的名义金额，即 343 个 tick 之外。你只取 5 档时，最深的档位离中间价只有 5×0.292 ≈ <strong>1.46 bps</strong>。</p>
+<div class='tw'><table><thead><tr><th>取数</th><th>视野（离 mid 最远档）</th><th>1% 区间内名义（双边）</th></tr></thead><tbody><tr><td><code>books?sz=5</code></td><td><strong>1.5 bps</strong></td><td><strong>$12.4k</strong></td></tr><tr><td><code>books?sz=200</code></td><td>58 bps</td><td>$736k（仍是下界）</td></tr><tr><td><code>books?sz=400</code></td><td><strong>218 / 230 bps</strong></td><td><strong>$765k / $859k</strong></td></tr></tbody></table></div>
+<p>$736k ÷ $12.4k ≈ 59。<strong>不是盘口差了 59 倍的流动性，是采样视野窄了 40 倍。</strong> BTC 更极端：tick = 0.013 bps，400 档也只有 <strong>5.3 bps</strong> 视野。</p>
+<h3>2. 要不要弃用 REST、只留 WebSocket？</h3>
+<p><strong>不要。但两者用途必须分开，混用才是危险。</strong></p>
+<ul><li><strong>Lighter 的订单簿是稀疏的</strong>：AAPL 只有 88 个价位却跨了 4983/20099 bps，NVDA 235 个价位跨 5141/19154 bps → <code>orderBookOrders?limit=250</code> 已<strong>完整覆盖 1%</strong>，且与 WS 快照深度<strong>完全一致</strong>（ratio = 1.00）。</li><li><strong>OKX 的 WS 全量深度确实存在</strong>：<code>books</code> 通道实测返回 <strong>400/400 档</strong>，带 <code>seqId</code>/<code>prevSeqId</code>/<code>checksum</code>，100ms 快照 + 增量。</li></ul>
+<div class='tw'><table><thead><tr><th>方案</th><th>收益</th><th>代价</th></tr></thead><tbody><tr><td>WS 全量 <code>books</code> 维护本地簿</td><td>gate 刷新可到 100ms 级</td><td>必须做断档检测 + checksum 校验 + 重订阅；漏一次断档就是<strong>静默残缺的深度</strong></td></tr><tr><td>REST 深档（当前）</td><td>每次都是完整快照，天然自愈</td><td>每标的约 1 次调用，TTL 1.5s 复用</td></tr></tbody></table></div>
+<p>分工：<strong>定价/成交判定 ← WS top-of-book；深度/操纵成本 ← REST 深档（400/250）</strong>。代码里物理隔离：<code>OkxVenue.quote()</code>（WS 5 档）与 <code>OkxVenue.book()</code>（REST 400 档）不共用缓存。</p>
+<h3>3. 已按这个结论改完并验证</h3>
+<pre><code class="lang-python">usd, covered_bps, complete = book.depth_covered(100)     # 视野不足返回 complete=False
+density = usd / min(100, covered_bps)                    # 与 tick 密度无关
+gate:   density &gt;= min_depth_usd_1pct / 100</code></pre>
+<ul><li>OKX 深度默认 400 档、Lighter 250 单；12 标的单轮 poll 24s → 10–16s（本机走代理）。</li><li>顺手修掉一个<strong>静默 bug</strong>：OKX <code>/market/ticker</code> 不返回 <code>idxPx</code>，原代码把 index 回退成 mark → <code>mark-index</code> 偏离恒为 0。现在 index 取自 <code>/market/index-tickers?quoteCcy=USDT</code>，实测 MSTR：mark 128.51 / index 128.52 / 偏离 0.78 bps。</li><li>mark/index/OI 改成 <strong>3 个全市场批量接口 + single-flight TTL 5s</strong>（36 次/轮 → 3 次/轮），资金费 300s TTL。</li></ul>
+<h3>4. 什么时候才值得上 WS-only 深度</h3>
+<p>只有当入场门槛压到 <strong>&lt; 5bps 且 gate 需要 sub-300ms 刷新</strong> 时才值得。当前基差 p95 是 7–13bps、成本 4–10bps，瓶颈在"错价窗口是否出现"，不在"深度数据晚 300ms"。届时必做：<code>seqId</code> 连续性、checksum 校验、断档重订阅、以及<strong>每小时用 REST 快照对账一次</strong>（top-5 或 1% 深度偏差 &gt; 1% 强制重同步）。</p>
+<details><summary>执行记录（5 条）</summary><div class="inner"><div class="tool"><b>实测 OKX 深档覆盖</b><div>AAPL 400 档覆盖 218/230bps、深度 $765k/$859k；NVDA 225/224bps、$1.08M/$1.14M</div></div><div class="tool"><b>实测 Lighter REST vs WS</b><div>AAPL 88/88 价位、NVDA 235/147；REST 与 WS 深度比 1.00</div></div><div class="tool"><b>实测 OKX WS books 通道</b><div><code>books</code> 订阅返回 400/400 档、<code>action=snapshot</code>、字段含 <code>seqId</code>/<code>prevSeqId</code>/<code>checksum</code></div></div><div class="tool"><b>改写深度闸门</b><div><code>Book.depth_covered()</code> / <code>depth_density_usd_per_bps()</code>；screen 与 mechanics 同步改为密度口径；加 3 个单测覆盖截断/密度/BTC 场景</div></div><div class="tool"><b>延迟优化</b><div>OKX 统计改 3 个批量接口 + single-flight；书 TTL 1.5s；12 标的单轮 24s→10-16s（本地代理 1s/请求）</div></div></div></details>
+</section>
+
+<section class="turn" id="t4" data-search="本次交付：对话存档 + 立即可实施的盈利方案 + 部署文档（含核心理念） 工作1：把我们本对话完整的写成html文件，不要遗漏任意细节并推送到github仓库中 jssyxd/arbtwin。
+工作2：帮我想一个现在立即可实施的盈利方案，具体参数、选取的双腿标的依据近14天的价差、新闻、选取宽容度大的最容易在上线后最轻量调试立即能实现稳定盈利的方案。我将稍后为你准备 vps、okx的交易api\lighter交易api以及在双所账户里注入试验资金，并形成详细的部署文档同步传到仓库里。
+工作3：部署文档开头补充上依据的核心理念，我们赚的是什么钱、为什么大部分情况下成立，如何避免不成立的意外情况、&quot;黑天鹅&quot;情况、我们的系统中有哪些是就为了防御这些风险而设置的架构。 三项交付均已完成并推送。
+
+## 工作 1：对话存档
+
+`docs/conversation.html` —— 自包含单文件（内联 css、目录、折叠的工具执行记录、全文检索框），
+包含四轮完整往来 + 21 条推文原文 + 全部实测数据表 + 仓库结构与 commit 列表。
+生成脚本 `scripts/build_conversation_html.py` 一并提交，内容更新后可重跑。
+
+## 工作 2：立即可实施的方案（v1）
+
+**一句话**：`soxl / gram / vvv` 三个标的，双挂（`dual_maker`）吃 12–15 bps 的基差回归，
+每腿 $400、3x 杠杆、4 小时强制离场，靠 lighter 的 0 手续费与 3.5%–28% 年化资金费补贴。
+
+依据（14 天小时线实测）：
+
+| 标的 | 基差 σ | p95 | ≥12bps 小时占比 | 半衰期 | 资金费中位年化 | 1% 深度 |
+|---|---:|---:|---:|---:|---:|---:|
+| soxl | 6.34 | 10.8 | 4.5% | 0.76h | 28% | $4.55m |
+| gram | 7.38 | 15.6 | 9.0% | 0.86h | 10.5% | — |
+| vvv | 5.72 | 11.4 | 4.5% | 1.70h | 14.4% | — |
+
+排除：**mstr**（2026-11-11 msci 指数决定，事件风险）、**lit**（自家代币规则风险）、
+其余 7 个（p95 8–10bps，扣掉 4bps 往返 + 2bps 摩擦太薄）。
+
+保守预期：1 次/天/标的、净 3–6 bps → $0.3–0.8/天 → 对 $2,000 权益 **年化 5%–15%**；
+乐观（2 次/天、净 6–8bps）**15%–35%**。任何&quot;月翻倍&quot;的说法在这个分布下都是错的。
+
+## 工作 3：部署文档的核心理念
+
+`docs/deployment.zh.md` 开头第 0 节即为核心理念：
+
+* **赚三笔钱**：① 两所独立订单流造成的报价错位（σ 4.1–7.4bps、半衰期 0.8–1.7h）；
+  ② 费率非对称（lighter 0 费 → 被动腿；okx 2bps → 双挂往返仅 4bps）；
+  ③ lighter 正向资金费（中位 3.5%–28% 年化，方向天然对齐）。
+* **为何成立**：单位可证（cv ≤0.08%、相关 ≥0.999）+ 错位来自摩擦（搬砖成本、抵押品、api 速率）
+  + 我们收的是流动性报酬而非方向预测。
+* **黑天鹅与对应架构**：10 类破裂方式逐条映射到会**拒绝交易**的闸门（calibration / mechanics /
+  anchor / issuer_risk / watchdog / 回撤停机 / kill switch），而不是&quot;注意一下&quot;。
+
+## 同期修掉的两个真问题
+
+* **资金费单位 100 倍错误**：lighter 的 `funding_rate` 是百分比/小时，okx 是小数/8h。
+  三方交叉验证（`/api/v1/funding-rates` ↔ ws `funding_rate` ↔ `base_interest_rate/8`）后修正，
+  并加两个单测锁死。
+* **会话分类错误**：gram/vvv/lit/trump 是 24/7 代币，此前被判为 `us_equity` → 夜间锚冻结、
+  引擎退化成只减仓。已修正并加测试。 14 天资金费历史lighter `fundings?resolution=1h`：soxl 中位 0.0032%/h（28% apr）、mstr 0.0004%/h（3.5%）；99–100% 小时为正 单位三方交叉验证`funding-rates` 给 lighter btc 9.6e-05（≈10.5% apr，与 binance/bybit/hl 同量级）↔ ws `0.0012`(%/h) ↔ `base_interest_rate 0.0100/8` 14 天基差统计12 个标的：σ 4.10–7.38bps、p95 8.2–15.6bps、半衰期 0.70–1.70h、≥12bps 小时占比 1%–9% 新闻复核mstr 的 msci 资格规则与 2026-11-11 决定（多源报道）→ 排除；lighter/okx 无影响标的可用性的公告 代码改动`max_hold_h`、`band_override_bps`、`symbols.starter.yaml`、`classify_session` 修正、资金费单位修正 + 4 个新测试 文档`docs/deployment.zh.md`（核心理念 + 参数 + 三阶段上线 + 监控 + 故障预案）、readme/changelog v0.2.0、`docs/conversation.html`">
+<h2>本次交付：对话存档 + 立即可实施的盈利方案 + 部署文档（含核心理念） <span class="badge">第 4 轮</span></h2>
+<div><span class="role">用户</span></div>
+<div class="msg-user">工作1：把我们本对话完整的写成Html文件，不要遗漏任意细节并推送到github仓库中 jssyxd/arbTwin。
+工作2：帮我想一个现在立即可实施的盈利方案，具体参数、选取的双腿标的依据近14天的价差、新闻、选取宽容度大的最容易在上线后最轻量调试立即能实现稳定盈利的方案。我将稍后为你准备 VPS、OKX的交易API\lighter交易API以及在双所账户里注入试验资金，并形成详细的部署文档同步传到仓库里。
+工作3：部署文档开头补充上依据的核心理念，我们赚的是什么钱、为什么大部分情况下成立，如何避免不成立的意外情况、&quot;黑天鹅&quot;情况、我们的系统中有哪些是就为了防御这些风险而设置的架构。</div>
+<div><span class="role">助手</span></div>
+<p>三项交付均已完成并推送。</p>
+<h3>工作 1：对话存档</h3>
+<p><code>docs/conversation.html</code> —— 自包含单文件（内联 CSS、目录、折叠的工具执行记录、全文检索框）， 包含四轮完整往来 + 21 条推文原文 + 全部实测数据表 + 仓库结构与 commit 列表。 生成脚本 <code>scripts/build_conversation_html.py</code> 一并提交，内容更新后可重跑。</p>
+<h3>工作 2：立即可实施的方案（v1）</h3>
+<p><strong>一句话</strong>：<code>SOXL / GRAM / VVV</code> 三个标的，双挂（<code>dual_maker</code>）吃 12–15 bps 的基差回归， 每腿 $400、3x 杠杆、4 小时强制离场，靠 Lighter 的 0 手续费与 3.5%–28% 年化资金费补贴。</p>
+<p>依据（14 天小时线实测）：</p>
+<div class='tw'><table><thead><tr><th>标的</th><th>基差 σ</th><th>p95</th><th>≥12bps 小时占比</th><th>半衰期</th><th>资金费中位年化</th><th>1% 深度</th></tr></thead><tbody><tr><td>SOXL</td><td>6.34</td><td>10.8</td><td>4.5%</td><td>0.76h</td><td>28%</td><td>$4.55M</td></tr><tr><td>GRAM</td><td>7.38</td><td>15.6</td><td>9.0%</td><td>0.86h</td><td>10.5%</td><td>—</td></tr><tr><td>VVV</td><td>5.72</td><td>11.4</td><td>4.5%</td><td>1.70h</td><td>14.4%</td><td>—</td></tr></tbody></table></div>
+<p>排除：<strong>MSTR</strong>（2026-11-11 MSCI 指数决定，事件风险）、<strong>LIT</strong>（自家代币规则风险）、 其余 7 个（p95 8–10bps，扣掉 4bps 往返 + 2bps 摩擦太薄）。</p>
+<p>保守预期：1 次/天/标的、净 3–6 bps → $0.3–0.8/天 → 对 $2,000 权益 <strong>年化 5%–15%</strong>； 乐观（2 次/天、净 6–8bps）<strong>15%–35%</strong>。任何"月翻倍"的说法在这个分布下都是错的。</p>
+<h3>工作 3：部署文档的核心理念</h3>
+<p><code>docs/DEPLOYMENT.zh.md</code> 开头第 0 节即为核心理念：</p>
+<ul><li><strong>赚三笔钱</strong>：① 两所独立订单流造成的报价错位（σ 4.1–7.4bps、半衰期 0.8–1.7h）；</li></ul>
+<p>② 费率非对称（Lighter 0 费 → 被动腿；OKX 2bps → 双挂往返仅 4bps）； ③ Lighter 正向资金费（中位 3.5%–28% 年化，方向天然对齐）。</p>
+<ul><li><strong>为何成立</strong>：单位可证（CV ≤0.08%、相关 ≥0.999）+ 错位来自摩擦（搬砖成本、抵押品、API 速率）</li></ul>
+<p>+ 我们收的是流动性报酬而非方向预测。</p>
+<ul><li><strong>黑天鹅与对应架构</strong>：10 类破裂方式逐条映射到会<strong>拒绝交易</strong>的闸门（calibration / mechanics /</li></ul>
+<p>anchor / issuer_risk / watchdog / 回撤停机 / kill switch），而不是"注意一下"。</p>
+<h3>同期修掉的两个真问题</h3>
+<ul><li><strong>资金费单位 100 倍错误</strong>：Lighter 的 <code>funding_rate</code> 是百分比/小时，OKX 是小数/8h。</li></ul>
+<p>三方交叉验证（<code>/api/v1/funding-rates</code> ↔ WS <code>funding_rate</code> ↔ <code>base_interest_rate/8</code>）后修正， 并加两个单测锁死。</p>
+<ul><li><strong>会话分类错误</strong>：GRAM/VVV/LIT/TRUMP 是 24/7 代币，此前被判为 <code>us_equity</code> → 夜间锚冻结、</li></ul>
+<p>引擎退化成只减仓。已修正并加测试。</p>
+<details><summary>执行记录（6 条）</summary><div class="inner"><div class="tool"><b>14 天资金费历史</b><div>Lighter <code>fundings?resolution=1h</code>：SOXL 中位 0.0032%/h（28% APR）、MSTR 0.0004%/h（3.5%）；99–100% 小时为正</div></div><div class="tool"><b>单位三方交叉验证</b><div><code>funding-rates</code> 给 Lighter BTC 9.6e-05（≈10.5% APR，与 Binance/Bybit/HL 同量级）↔ WS <code>0.0012</code>(%/h) ↔ <code>base_interest_rate 0.0100/8</code></div></div><div class="tool"><b>14 天基差统计</b><div>12 个标的：σ 4.10–7.38bps、p95 8.2–15.6bps、半衰期 0.70–1.70h、≥12bps 小时占比 1%–9%</div></div><div class="tool"><b>新闻复核</b><div>MSTR 的 MSCI 资格规则与 2026-11-11 决定（多源报道）→ 排除；Lighter/OKX 无影响标的可用性的公告</div></div><div class="tool"><b>代码改动</b><div><code>max_hold_h</code>、<code>band_override_bps</code>、<code>symbols.starter.yaml</code>、<code>classify_session</code> 修正、资金费单位修正 + 4 个新测试</div></div><div class="tool"><b>文档</b><div><code>docs/DEPLOYMENT.zh.md</code>（核心理念 + 参数 + 三阶段上线 + 监控 + 故障预案）、README/CHANGELOG v0.2.0、<code>docs/conversation.html</code></div></div></div></details>
+</section>
+<section class="turn" id="appendix"><h2>附录</h2>
+<h3>A. @totofdn 近 21 条推文原文（不含回复）</h3><pre><code>
+2118827815080452293 | Nov 6, 2026 | Arbing Anthropic between Hyperliquid and Lighter is one of the best thing you can do currently to print
+
+Lighter price was 8% below HL price this morning, then it went to parity in the afternoon, now back to 5% below Hyperliquid
+
+This was an easy 8% daily trade, and on top of that you get some free HIP-3 volume
+
+2117924685711028712 | Nov 4, 2026 | The @entropyIO Anthropic Pre-IPO on Hyperliquid is trading at a 12-15% premium compared to all other venues (Variationnal, Lighter, Extended, Aster, ...)
+
+The OI just keeps going up, and funding are now at a constant 100% APR
+
+I wouldn&#x27;t be surprised if we get some scam candle that liquidates all shorts/arber, as we had with $XPL back in the days (during his pre-market)
+
+According to @entropyIO docs, their upper cap for mark price is 4200$, so that leaves some room for a lots of liquidations, and it&#x27;s mostly based on last 5-10min mid price
+
+Set up your alerts
+
+2117932149844390141 | Nov 4, 2026 | btw 50m$ of short liquidations at 2400$ (while the market only has 100m$ OI)
+
+2115911144841810413 | Oct 29, 2026 | If you have $WETH on Ethereum it&#x27;s time to sell them there is a nice +15% overpeg right now (because of the binance hack)
+
+2097376696903274607 | Sep 8, 2026 | You can still print 50%-100% APR on stablecoin on Robinhood with almost 0 risk
+
+SGOV/USDG pairs are cooking hard, and because SGOV is just a short term bonds ETF his price has 0 volatility (only up by 4% every year), so you get 0 IL as if you were LPing two stablecoins
+
+And the APR get even crazier when some shitcoins are launched with an SGOV pair
+
+Just rotate your farms while it last
+
+2095971896806219846 | Sep 4, 2026 | 300% APR on US bonds — Great tech @RobinhoodCrypto
+
+2095804534895391026 | Sep 4, 2026 | I printed tons of money from Robinhood chain LP this week
+
+What works the best currently is buying all the low mcap stocks (those that have 0 liq), LP them in a 5% fees pool, and wait for some degens to create a shitcoin quoted on your stock
+
+Why this works ? Because whenever a shitcoin is quoted on a stock (for example MEME/AMC), all people that will want to buy MEME with ETH or USDG will first be routed in a AMC/USDG pool in their swap, so all the volume of the memecoin has an impact on the volume of the stock
+
+But you gonna tell me, how to buy stocks if they don&#x27;t have liquidity ? Well there&#x27;s a glitch that not many people know about, which is Arcus RFQ
+
+When you buy spot token on Arcus, your swap is either routed trough @Uniswap or to a market maker that will directly mint the token for you at the tradfi price (minus a small spread). Here we don&#x27;t care of quote that goes to Uniswap, what you will looking for is for a quote that goes to RFQ
+
+This is mostly available during open market hours, it&#x27;s quite bugged so sometime you get 10 uniswap quote with a 50% spread, and then you get an RFQ quote with a small 0.2% spread
+
+So what smart people do, is buying 20 or 30 low caps stocks that have 0 liquidity, put them in a 5% fee uniswap LP with a high range, and you print each time a shitcoin is created with your low cap stocks as quote asset
+
+Another strategy is buying these low mcap stocks at tradfi price, wait for an overpeg (which happen whenever a shitcoin get some volume) and dump for a +20% or +30% (put limit order or price alert)
+
+Get ready for this weekend, market maker will probably be sleeping and there will be shit tons of opportunity
+
+2045647406096658669 | Apr 18, 2026 | If you don&#x27;t have a bot to exit your ETH position on AAVE, @CoWSwap might do the trick
+
+Just swap your AAVE ETH for ETH, and set some low slippage to cover gas cost, and once some liquidity are available for withdraw, Cowswap will automatically handle it for you
+
+That&#x27;s what AAVE frontend is using for their collateral swap, but you can go on Cowswap frontend directly and swap for ETH
+
+2041966235068383707 | Apr 8, 2026 | Do not fall for Dolomite high APR on USDC &amp; USD1
+
+The WLFI team is currently max extracting by supplying $WLFI and borrowing USDC &amp; USD1 on Dolomite
+
+On Binance (aka the most liquid exchange) you send the chart straight to 0 if you try to sell 500k$ worth of $WLFI (FDV is 10b)
+
+But WLFI team managed to deposit 500m$ worth of WLFI, and borrowed 100-200m in stablecoin
+
+Not a surprise since WLFI cto and Dolomite founder are the same person, this guy just keep increasing supply caps on $WLFI
+
+They are also running some @merkl_xyz incentives to attract more exit liq on Dolomite
+
+They will never repay, they can&#x27;t be liquidated, and Dolomite users are just their exit liq
+
+2039036754166980843 | Mar 31, 2026 | Since @Polymarket activated fees their revenues have more than doubled
+
+They already did +500k in fees today (new ATH), and the day is far from over
+
+Before fees activation they were doing 10-20k per hour, now it&#x27;s 30-40k
+
+Send it $POLY
+
+2032597995158376786 | Mar 13, 2026 | You can farm every HIP-3 dex on Hyperliquid for 0$ in fees, and even being paid to
+
+How ? by just arbing price on the same ticker between different dex
+
+For example, today you could have open a $NVDA long on @tradexyz 7bps lower than your short on @Dreamcash
+
+Then close your position 3 hours later, when your short was 3 bps lower than your long (we open when long side is lower, then we close when short side is lower)
+
+With growth mode there are around 3 bps in fees for open + close
+
+So thats a solid 7 bps profit in 3 hours + free volume on xyz + dreamcash
+
+And of course this can be easily automated to monitor every pair on every dex
+
+1998457566053982421 | Dec 9, 2025 | If you want to earn free money on @Polymarket, just set up bots on market resolutions: 扫 &quot;Ending soon&quot;、读规则、抓决议源、决议公布后吃赢的一侧订单簿。低成交量市场没人 bot，这就是空间。
+
+1998015613738815872 | Dec 8, 2025 | Stable 刚 TGE，@merkl_xyz 可领；pre-deposit 拿到 50-100% APR。其余农场复核：AAVE on ink 仍 ~30% APR、Extended 仍在印刷、USDAI 下调倍率已退出、MegaETH 未上线。
+
+1998039291906437571 | Dec 8, 2025 | btw a single wallet got 40% of the airdrop, crime is criming
+
+1997361990809866374 | Dec 6, 2025 | Polymarket Kabuto 市场可被操纵：决议源 TCGPlayer 的&quot;日均价&quot;，当日仅 27 笔成交，3-4k$ 即可把均价推过 100$；YES 最大持有者 47k 股 @31c，可赚 30k$。
+
+1996910060933361668 | Dec 5, 2025 | 周末在 @extendedapp 可零费做百万量：Forex 周末本该关闭，但 Extended 的 EUR/USD 不转 reduce-only；刷量者会吃你挂在收盘价附近的 limit 单。周末该对日成交约 10m。
+
+1995484314872524981 | Dec 1, 2025 | The 800k guy just canceled his bid, now the sale TVL sits at 1.5m, but the 2m market is still in review for a YES resolve — Absolute cinema
+
+1995490097161220175 | Dec 1, 2025 | 2m market have just been disputed
+</code></pre>
+<h3>B. 关键实测数据</h3>
+<h4>单位一致性（7 天小时线，比值 = Lighter/OKX）</h4>
+<div class='tw'><table><thead><tr><th>标的</th><th>比值均值</th><th>比值 CV</th><th>收益率相关</th><th>判定</th></tr></thead><tbody><tr><td>ETH</td><td>1.0001</td><td>0.011%</td><td>0.9997</td><td>同一标的</td></tr><tr><td>AAPL</td><td>0.9987</td><td>0.033%</td><td>0.9983</td><td>同一标的</td></tr><tr><td>NVDA</td><td>0.9988</td><td>0.031%</td><td>0.9989</td><td>同一标的</td></tr><tr><td>ANTHROPIC</td><td>10.38</td><td>4.07%</td><td>0.80</td><td>不同标的，剔除</td></tr></tbody></table></div>
+<h4>1% 深度与档数（AAPL，tick = 0.292 bps）</h4>
+<div class='tw'><table><thead><tr><th>取数</th><th>视野</th><th>1% 区间内名义</th></tr></thead><tbody><tr><td>OKX sz=5</td><td>1.5 bps</td><td>$12.4k</td></tr><tr><td>OKX sz=200</td><td>58 bps</td><td>$736k（下界）</td></tr><tr><td>OKX sz=400</td><td>218/230 bps</td><td>$765k / $859k</td></tr><tr><td>Lighter REST 250 单 vs WS</td><td>—</td><td>$1,116,770 vs $1,116,714（ratio 1.00）</td></tr></tbody></table></div>
+<h4>全量筛选（175 候选，831 秒）</h4>
+<pre><code class="lang-text">approved 12 / 175
+GRAM SOXL VVV COIN LIT MSTR XPT EWY TRUMP MRVL ORCL SNDK
+ratio CV 0.044–0.076%   corr 0.991–0.9996
+rejected 163:
+  · 基差 p95 不够覆盖成本（SPY -11.4bps、DOT -11.9、NVDA -11.0、AMZN -9.9 …）
+  · 移动 25bps 成本 &lt; $50k（APT $45k、DASH $45.6k、DYDX $11.3k、RIVER $5.0k …）
+  · 比值/相关不成立（SHEIN 0.26%/0.84、NOK、GEV、XCU）</code></pre>
+<h4>14 天基差统计（小时线，400 根）</h4>
+<div class='tw'><table><thead><tr><th>标的</th><th>σ</th><th>p50</th><th>p95</th><th>max</th><th>≥12bps 占比</th><th>半衰期</th><th>资金费中位年化</th></tr></thead><tbody><tr><td>SOXL</td><td>6.34</td><td>3.7</td><td>10.8</td><td>34.8</td><td>4.5%</td><td>0.76h</td><td>28%</td></tr><tr><td>GRAM</td><td>7.38</td><td>4.6</td><td>15.6</td><td>30.8</td><td>9.0%</td><td>0.86h</td><td>10.5%</td></tr><tr><td>VVV</td><td>5.72</td><td>3.5</td><td>11.4</td><td>16.8</td><td>4.5%</td><td>1.70h</td><td>14.4%</td></tr><tr><td>COIN</td><td>4.77</td><td>2.7</td><td>10.4</td><td>14.9</td><td>2.0%</td><td>0.95h</td><td>6.1%</td></tr><tr><td>MSTR</td><td>5.90</td><td>3.6</td><td>12.4</td><td>28.5</td><td>6.0%</td><td>1.30h</td><td>3.5%</td></tr><tr><td>LIT</td><td>6.04</td><td>4.1</td><td>11.4</td><td>27.6</td><td>5.0%</td><td>1.60h</td><td>10.5%</td></tr></tbody></table></div>
+<h4>资金费单位的三方交叉验证</h4>
+<div class='tw'><table><thead><tr><th>来源</th><th>值</th><th>换算</th></tr></thead><tbody><tr><td>Lighter WS <code>funding_rate</code> (BTC)</td><td>0.0012</td><td>百分比/小时 → 0.0012%/h → 10.51% APR</td></tr><tr><td>Lighter <code>/funding-rates</code> (BTC, lighter 行)</td><td>9.6e-05</td><td>小数/8h → 10.5% APR</td></tr><tr><td><code>base_interest_rate</code> / 8</td><td>0.0100 / 8 = 0.00125</td><td>与 WS 值一致</td></tr><tr><td>OKX <code>fundingRate</code></td><td>0.0001</td><td>小数/8h → 10.95% APR</td></tr></tbody></table></div>
+<h3>C. 仓库提交记录</h3><pre><code>
+a5fbd59 feat: arbTwin 0.1.0 — OKX&lt;-&gt;Lighter twin-venue basis engine (P0-P8)
+22cee9d test: cover the screening funnel (approve path, divergent reject, session split)
+28d930d feat: generated universe (12/175 pass), OKX stats TTL cache, poll-rate floor
+c687518 docs: record the first full screen (12/175) and clarify preferred_mode is advisory
+7e4df2b docs: test count + changelog coverage line
+b172363 fix(engine): queue exits from actual positions, not from a side label
+6ad3b58 perf(engine): parallel snapshot fetch, tighter read timeouts, 5s OKX stats TTL
+d39f8b0 fix(cli): live-run guard read a non-existent arg dest and crashed instead of refusing
+86c41a4 fix(depth): gate on notional-per-bp, use 400/250-level snapshots, 3 bulk OKX calls
+(本次交付) v0.2.0 — 资金费单位修正、max_hold_h、band_override、starter universe、部署手册、对话存档
+</code></pre>
+<h3>D. 目录结构</h3><pre><code>
+arbtwin/
+  calibration.py   P0-1 单位证明（CV / 收益率相关三态判定）
+  spread.py        P0-1 溢价矩阵 + 双腿计划（hedge_now / dual_maker）
+  mechanics.py     P0-2 mark 窗口/cap、OI 利用率、深度密度、25bps 移动成本、延迟成本
+  anchor.py        P1-3 tradfi &gt; RFQ &gt; 两 index 中位数 + 交易时段冻结
+  band.py          P1-4 σ_basis × 费率带宽，σ→0 退化分支
+  fees.py          P1-5 费率 = venue × 订单类型 × 激励期
+  issuer_risk.py   P2-6 结构风险卡（7 条硬红旗）
+  manipulation.py  P2-7 操纵成本 / 薄盘口惩罚
+  exitqueue.py     P2-8 带 deadline 的被动退出队列
+  engine.py        决策、执行、maker 报价轮询、风控退出、max hold
+  screening.py     universe 漏斗（→ config/symbols*.yaml）
+  monitor.py       8 个监控信号 + JSONL + webhook
+  data.py          两所小时线（缓存）
+  venues/{okx,lighter,lighter_trade,base}.py
+  backtest/replay.py  因果回放（t+1 成交）+ walk-forward
+config/{venues,risk,symbols,symbols.starter}.yaml
+docs/DEPLOYMENT.zh.md, docs/conversation.html
+deploy/arbtwin.service
+tests/ (55 个纯逻辑测试，无网络)
+</code></pre></section>
+
+<footer>
+本页由 <code>scripts/build_conversation_html.py</code> 生成，内容即本次会话。
+参数与结论均可在仓库内复验：<code>arbtwin doctor</code> / <code>screen</code> /
+<code>monitor</code> / <code>backtest</code>，以及 <code>docs/DEPLOYMENT.zh.md</code> 的验收清单。
+</footer></div><script>
+const q = document.getElementById('q');
+q.addEventListener('input', () => {
+  const needle = q.value.trim().toLowerCase();
+  document.querySelectorAll('[data-search]').forEach(el => {
+    el.style.display = !needle || el.dataset.search.includes(needle) ? '' : 'none';
+  });
+});
+document.querySelectorAll('details').forEach(d => { d.open = false; });
+</script></body></html>

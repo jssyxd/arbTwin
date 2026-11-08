@@ -1,5 +1,8 @@
 # arbTwin — OKX ↔ Lighter 双塔基差引擎
 
+> **实盘手册（部署 / 获利前提 / 标的筛选 / 监控 / 故障预案）**：[`docs/DEPLOYMENT.zh.md`](docs/DEPLOYMENT.zh.md)
+> **本次对话完整存档**：[`docs/conversation.html`](docs/conversation.html)
+>
 > 一个交易所（OKX，USDT 本位 CEX）与一个 zk-rollup DEX（Lighter，USDC 本位）之间，
 > **同一标的、同一单位**的两个报价之间的机械基差交易。默认只读、默认 dry-run、
 > 每一道风控都是 veto 而不是建议。
@@ -353,10 +356,11 @@ sudo journalctl -u arbtwin -f        # 或 tail -f /var/log/arbtwin/engine.log
 * 单 leg 名义 ≤ `min(本 venue 权益 × 杠杆 × 0.35, 1% 深度 × 10%, $3000)`；
 * 两所权益各自覆盖最坏情况的单腿漂移 12%：即单边权益 ≥ 名义 × 12% × 杠杆缓冲；
 * 同时持仓数 ≤ `max_open_symbols`（默认 4），因为退出通道（被动队列）是共享稀缺资源；
-* 净资金费被**计入成本**：`funding_cost_bps = carry_APR/100/8760 × 1e4 × expected_hold_h`
-  （默认 2 小时）。实测 Lighter 的股票类 perp 在美股盘中是 `0.04%/h`（=350% APR），
-  2 小时就是 8bps —— 足以吃掉全部基差；反过来做对方向时它是**收入**（monitor 会给
-  `funding harvest regime` 提示）。
+* 净资金费被**计入成本/收入**：`funding_cost_bps = carry_APR/100/8760 × 1e4 × expected_hold_h`
+  （默认 2 小时）。单位口径是这里最容易错 100 倍的地方：**Lighter 的 `funding_rate`
+  是百分比/小时**（`0.0012` = 0.0012%/h ≈ 10.5% APR），**OKX 的 `fundingRate` 是小数/8 小时**。
+  实测 14 天中位年化：权益类 **3.5%**、加密类 **10.5%**、SOXL **28%**（均值被少数极端小时抬到 9–39%）。
+  方向对我们有利时它是补贴（monitor 会提示 `funding harvest regime`），不利时才计入成本。
 
 ### 5.4 不要交易的情形（引擎会自己拒绝，但要理解为什么）
 
