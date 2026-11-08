@@ -15,13 +15,25 @@
 | OKX passphrase | **缺失** | 未提供 |
 | 试验资金 | 31.47（据称，交易所侧尚未核到） | 用户提供 |
 
-## 2. 当前不能进实盘的三个硬阻塞
+## 1.1 2026-11-08 21:0x 复核（截图 + 实盘 API）
+
+| 项 | 事实 | 来源 |
+|---|---|---|
+| Lighter API key 4 / 5 | **已注册**，`NONCE = 1`（新生成） | Lighter「API 密钥」页截图 |
+| Lighter 费率 | **挂单 0% / 吃单 0%** | Lighter 交易页截图 |
+| Lighter 权益 | **$27.62**（`总余额 27.62 USDC`、`交易净值 $27.62`、`全仓杠杆 0x`） | 同上 + `available_balance` |
+| 闭市机制 | CXMT 显示「指数价格冻结在最后一个外部价格，mark 最多偏离 ±20%」 | 截图 —— 这正是 `session` gate 要挡的场景 |
+| OKX passphrase | 已收到（仅写入主机 `/opt/arbtwin/.env`，640，不入仓库） | 用户提供 |
+| OKX 访问 | **50110：IP 白名单只含 155.254.60.38 / 23.27.186.126**；本机出口 95.40.146.30 被拒 → 一切 OKX 私有读取必须在 VPS 上执行 | `GET /api/v5/account/balance` |
+
+## 2. 当前不能进实盘的硬阻塞（更新）
 
 | # | 阻塞 | 证据 | 解除方式 |
 |---|---|---|---|
-| 1 | OKX 私钥请求无法签名 | `.env` 中 `OKX_API_PASSPHRASE` 为空；OKX 所有私有接口都要求 passphrase | 提供 API key 的 passphrase（创建时自己设的那串，不是登录密码） |
+| 1 | ~~OKX passphrase 缺失~~ **已解除** | passphrase 已收到；但仍受 IP 白名单限制（见 1.1） | 把 passphrase 写进主机 `.env`（需 SSH 可达） |
 | 2 | ~~Lighter 无抵押品~~ **已解除** | `available_balance = 27.629041`（此前读 `assets[].balance` 误判为 0） | 无需充值；引擎已改用账户级总字段 |
-| 3 | Lighter API key 未注册 | `api_keys: []` | 用持有 767659 的 L1 钱包做一次 `ChangePubKey`（Lighter 网页或 SDK `create_api_key()`）；随后给我 key index + 私钥 |
+| 3 | ~~Lighter key 未注册~~ **已解除** | 截图显示 index 4 / 5 均存在，NONCE 1 | 无需操作（公开 API 的 `api_keys` 字段不返回它们，之前误判） |
+| 4 | 本 build 拒绝 live | `_assert_live_is_safe()` 在 `run_forever` 第一行 | 订单状态对账落地前只能 dry-run（见 CHANGELOG v0.2.3/0.2.4） |
 
 > 两腿策略要求两所都有保证金。任何一侧为 0，引擎的 `_target_notional()` 返回 0，不会下单。
 
@@ -63,6 +75,16 @@ limits:
   max_open_symbols: 1
   max_notional_usd: 15      # 每腿 ~$10-15，正好压在 Lighter 最小单之上
 ```
+
+## 3.2 诚实预期（30 天、分 session 的事件研究）
+
+| 标的 | 触发 | 出场 | b\* | 单次捕获 | 单次净额 | 事件数/30d | 完成率 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| SOXL | 12.4 | 2.85 | 9.27 | 14.78 | **+4.12 bps** | 5 | 80% |
+| COIN | 10.54 | 3.92 | 8.12 | 13.06 | **+3.71 bps** | 5 | 100% |
+
+即 **每月约 10 次机会**（两标的合计），$12/腿 → 每次 ≈ $0.004~0.005。
+**结论：$27.62 的账户是"机制验证"规模，不是一个收益引擎。**
 
 ## 4. 拿到缺失项后的启动顺序
 

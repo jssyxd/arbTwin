@@ -1,39 +1,31 @@
-generated_at: '2026-11-08T13:02:54Z'
+generated_at: '2026-11-08T13:08:24Z'
 universe:
   candidates: 5
   approved: 2
   rejected: 3
 approved:
-- symbol: COIN
-  unit_ratio: 0.99847251
-  sigma_1h_bps: 73.77
-  basis_sigma_bps: 5.14
-  b_star_bps: 7.83
-  band_bps: 10.27
-  session: us_equity
-  preferred_mode: dual_maker
-  notes:
-    ratio_cv_pct: 0.0514
-    return_corr: 0.99787
-    score: 0.19
-    basis_p95_bps: 10.2
-    basis_p95_rth_bps: 10.54
-    basis_p50_rth_bps: 3.92
-    capture_bps: 13.06
-    events: 5
-    completion: 1.0
-    trades_per_day: 0.27
-    net_per_round_bps: 4.05
-    max_fee_bps_for_breakeven: 8.05
-    fill_probability: 0.048
 - symbol: SOXL
   unit_ratio: 0.99884589
   sigma_1h_bps: 182.26
   basis_sigma_bps: 8.12
-  b_star_bps: 9.28
+  b_star_bps: 9.27
   band_bps: 16.24
   session: us_equity
   preferred_mode: dual_maker
+  entry_bps_p95: 12.4
+  exit_bps_p50: 2.85
+  band_override_bps: 12.4
+  entry_deadline_s: 5400
+  exit_deadline_s: 3600
+  max_hold_h: 4.0
+  spread_okx_bps: 2.14
+  spread_lighter_bps: 2.14
+  capture_bps: 14.78
+  net_per_round_bps: 4.12
+  max_fee_bps_for_breakeven: 8.12
+  events: 5
+  completion: 0.8
+  trades_per_day: 0.27
   notes:
     ratio_cv_pct: 0.0812
     return_corr: 0.99911
@@ -48,6 +40,42 @@ approved:
     net_per_round_bps: 4.12
     max_fee_bps_for_breakeven: 8.12
     fill_probability: 0.024
+- symbol: COIN
+  unit_ratio: 0.99847251
+  sigma_1h_bps: 73.77
+  basis_sigma_bps: 5.14
+  b_star_bps: 8.13
+  band_bps: 10.27
+  session: us_equity
+  preferred_mode: dual_maker
+  entry_bps_p95: 10.54
+  exit_bps_p50: 3.92
+  band_override_bps: 10.54
+  entry_deadline_s: 5400
+  exit_deadline_s: 3600
+  max_hold_h: 4.0
+  spread_okx_bps: 1.49
+  spread_lighter_bps: 1.64
+  capture_bps: 13.06
+  net_per_round_bps: 3.71
+  max_fee_bps_for_breakeven: 7.71
+  events: 5
+  completion: 1.0
+  trades_per_day: 0.27
+  notes:
+    ratio_cv_pct: 0.0514
+    return_corr: 0.99787
+    score: 0.18
+    basis_p95_bps: 10.2
+    basis_p95_rth_bps: 10.54
+    basis_p50_rth_bps: 3.92
+    capture_bps: 13.06
+    events: 5
+    completion: 1.0
+    trades_per_day: 0.27
+    net_per_round_bps: 3.71
+    max_fee_bps_for_breakeven: 7.71
+    fill_probability: 0.048
 rejected:
 - symbol: GRAM
   reasons:
@@ -57,19 +85,17 @@ rejected:
   ratio_cv_pct: 0.0719
   return_corr: 0.9931
   net_taker_bps: -2.19
-- symbol: LIT
-  reasons:
-  - 'net -1.4bps/round < 0: capture 8.3 (p95 10.6 -> p50 4.0, 25 events, 44% complete)
-    - b* 8.4 (fees 4.0 + spreads 2.2/1.2 + margin)'
-  - score -0.05 < 0.0
-  ratio_cv_pct: 0.0605
-  return_corr: 0.9994
-  net_taker_bps: -6.87
 - symbol: VVV
   reasons:
-  - 'net -2.4bps/round < 0: capture 8.0 (p95 11.3 -> p50 3.9, 25 events, 44% complete)
-    - b* 9.1 (fees 4.0 + spreads 1.4/2.6 + margin)'
-  - score -0.11 < 0.0
+  - 'net -1.2bps/round < 0: capture 8.0 (p95 11.3 -> p50 3.9, 25 events, 44% complete)
+    - b* 8.1 (fees 4.0 + spreads 0.5/2.6 + margin)'
+  - score -0.06 < 0.0
   ratio_cv_pct: 0.0581
   return_corr: 0.9993
   net_taker_bps: -6.07
+- symbol: LIT
+  reasons:
+  - 'net +0.8bps/round < min 1.0 (thin: 1.20 trades/day, 44% complete)'
+  ratio_cv_pct: 0.0605
+  return_corr: 0.9994
+  net_taker_bps: -6.87
