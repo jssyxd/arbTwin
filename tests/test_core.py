@@ -413,3 +413,24 @@ def test_lighter_without_taker_key_falls_back_to_the_single_key():
         assert created == [4]          # no taker key configured -> single key
     finally:
         sys.modules.pop("arbtwin.venues.lighter_trade", None)
+
+
+def test_live_okx_without_passphrase_is_fail_closed():
+    """An empty passphrase must never look like a usable live credential."""
+    from arbtwin.config import OkxCredentials
+
+    assert OkxCredentials(api_key="k", api_secret="s", passphrase="").has_private is False
+    assert OkxCredentials(api_key="k", api_secret="s", passphrase="p").has_private is True
+    # and the engine's sizing refuses without equity from *both* venues
+    from arbtwin.engine import Broker
+    from arbtwin.venues.okx import OkxVenue
+    from arbtwin.venues.lighter import LighterVenue
+
+    okx = OkxVenue(OkxCredentials(api_key="k", api_secret="s", passphrase=""))
+    # equity reads report 0 instead of guessing -> sizing returns 0 -> no orders,
+    # and `place()` raises if anything ever tries to send
+    assert okx.equity_usd() == 0.0
+    from arbtwin.models import OrderRequest, MarketSpec
+    spec = MarketSpec("okx", "X", "X-USDT-SWAP", 2, 3, 0.001, 0.0)
+    with pytest.raises(Exception):
+        okx.place(OrderRequest("okx", "X", "buy", 1.0, 100.0), spec)
