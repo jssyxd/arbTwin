@@ -72,8 +72,11 @@ jq -r '[.ts,.symbol,.state,.pnl_bps]|@tsv' state/rounds.jsonl
 
 | key index | 用途 | 现状 |
 |---|---|---|
-| 4 | 挂单/撤单（引擎当前只用这一把） | 待注册 |
-| 5 | 预留：一次性的 IOC 升级（`exit_deadline_s` 之后） | 待注册；引擎尚未拆 key 使用 |
+| 4 | 挂单/撤单（`post_only`） | 待注册 |
+| 5 | 一次性 IOC 升级（`exit_deadline_s` 之后、风险止损） | 待注册；代码已按此拆分（`_trader(taker=...)`，两个单测） |
+
+配置项：`LIGHTER_API_KEY_INDEX=4` + `LIGHTER_API_KEY_INDEX_TAKER=5`，
+对应两把私钥分别写入 `LIGHTER_API_PRIVATE_KEY` / `LIGHTER_API_PRIVATE_KEY_TAKER`。
 
 > 同一个 key 的交易严格串行（一个 300ms 的 taker 会拖住后续 post-only），
 > 所以两把 key 是正确做法；拆 key 的代码改动已记录在 `CHANGELOG` 的后续项。

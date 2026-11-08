@@ -85,6 +85,10 @@ class OkxCredentials:
 class LighterCredentials:
     api_private_key: str = ""
     api_key_index: int = -1
+    # Second key for liquidity-taking (IOC escalations).  Lighter serialises every
+    # transaction per API key, so a 300 ms taker must not share the quoting key.
+    api_private_key_taker: str = ""
+    api_key_index_taker: int = -1
     account_index: int = -1
     base_url: str = "https://mainnet.zklighter.elliot.ai"
     ws_url: str = "wss://mainnet.zklighter.elliot.ai/stream"
@@ -93,11 +97,17 @@ class LighterCredentials:
     def has_private(self) -> bool:
         return bool(self.api_private_key) and self.api_key_index >= 0 and self.account_index >= 0
 
+    @property
+    def has_taker_key(self) -> bool:
+        return bool(self.api_private_key_taker) and self.api_key_index_taker >= 0
+
     @classmethod
     def from_env(cls) -> "LighterCredentials":
         return cls(
             api_private_key=_env("LIGHTER_API_PRIVATE_KEY"),
             api_key_index=_env_int("LIGHTER_API_KEY_INDEX", -1),
+            api_private_key_taker=_env("LIGHTER_API_PRIVATE_KEY_TAKER"),
+            api_key_index_taker=_env_int("LIGHTER_API_KEY_INDEX_TAKER", -1),
             account_index=_env_int("LIGHTER_ACCOUNT_INDEX", -1),
             base_url=_env("LIGHTER_BASE_URL", "https://mainnet.zklighter.elliot.ai").rstrip("/"),
             ws_url=_env("LIGHTER_WS_URL", "wss://mainnet.zklighter.elliot.ai/stream"),

@@ -90,7 +90,7 @@ class LighterVenue(VenueAdapter):
         self._lock = threading.Lock()
         self._ws: Optional[_LighterWs] = None
         self.book_ttl_s = 1.5
-        self._client = None
+        self._clients: dict[str, object] = {}
         self._client_error: Optional[str] = None
 
     # ------------------------------------------------------------------ rest
@@ -247,23 +247,30 @@ class LighterVenue(VenueAdapter):
                 "reconnects": self._ws.reconnects, "error": self._ws.last_error}
 
     # ------------------------------------------------------------------ account
-    def _trader(self):
-        if self._client is None:
-            if self._client_error is not None:
-                raise VenueUnavailable(self._client_error)
-            if not self.creds.has_private:
-                self._client_error = ("lighter trading needs LIGHTER_API_PRIVATE_KEY / "
-                                      "LIGHTER_API_KEY_INDEX / LIGHTER_ACCOUNT_INDEX")
-                raise VenueUnavailable(self._client_error)
-            from .lighter_trade import LighterTradeClient
+    def _trader(self, taker: bool = False):
+        """Quoting and taking use different API keys (Lighter serialises per key)."""
+        slot = "taker" if taker and self.creds.has_taker_key else "maker"
+        if slot in self._clients:
+            return self._clients[slot]
+        if self._client_error is not None:
+            raise VenueUnavailable(self._client_error)
+        if not self.creds.has_private:
+            self._client_error = ("lighter trading needs LIGHTER_API_PRIVATE_KEY / "
+                                  "LIGHTER_API_KEY_INDEX / LIGHTER_ACCOUNT_INDEX")
+            raise VenueUnavailable(self._client_error)
+        from .lighter_trade import LighterTradeClient
 
-            self._client = LighterTradeClient(
-                base_url=self.creds.base_url,
-                account_index=self.creds.account_index,
-                api_private_key=self.creds.api_private_key,
-                api_key_index=self.creds.api_key_index,
-            )
-        return self._client
+        if slot == "taker":
+            key, index = self.creds.api_private_key_taker, self.creds.api_key_index_taker
+        else:
+            key, index = self.creds.api_private_key, self.creds.api_key_index
+        self._clients[slot] = LighterTradeClient(
+            base_url=self.creds.base_url,
+            account_index=self.creds.account_index,
+            api_private_key=key,
+            api_key_index=index,
+        )
+        return self._clients[slot]
 
     def positions(self) -> dict[str, VenuePosition]:
         if self.creds.account_index < 0:
@@ -305,7 +312,7 @@ class LighterVenue(VenueAdapter):
     # ------------------------------------------------------------------ trading
     def place(self, order: OrderRequest, spec: MarketSpec) -> Fill:
         """Sign + send one order.  Prices and sizes go over the wire as integers."""
-        trader = self._trader()
+        trader = self._trader(taker=(order.tif == "ioc"))
         price_int = int(round(order.px * 10 ** spec.price_decimals))
         size_int = int(round(order.qty_base * 10 ** spec.size_decimals))
         if size_int <= 0:

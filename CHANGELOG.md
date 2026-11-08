@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## v0.2.2 — Lighter 双 key 拆分（挂单 / 吃单）（2026-11-08）
+
+- `LighterCredentials` 增加 `api_private_key_taker` / `api_key_index_taker`；
+  `LighterVenue._trader(taker=...)` 按需选择：`post_only` 走挂单 key，`ioc` 走吃单 key
+  （Lighter 每把 key 的交易严格串行，300ms 的 taker 不能和挂单共用一把）。
+- 没有配置吃单 key 时自动回退到单 key，不报错（两个单测覆盖）。
+- `docs/LIVE-accountbot2.md`：实盘接入清单（三条硬阻塞、$31.47 的规模上限算术）。
+
 ## v0.2.1 — wave 执行模式 + 第一台实机部署（2026-11-08）
 
 - `strategy: wave`（`arbtwin/wave.py` + `wavetrader.py`）：一轮一清、纯限价、

@@ -364,3 +364,52 @@ def test_gross_trigger_semantics():
     miss = compute_row("AAPL", okx_book, mk_book("lighter", "AAPL", 100.05, 100.07, size=100),
                        1.0, fees, sigma_1h_bps=20.0, band_override_bps=12.0)
     assert miss.action == "WAIT"
+
+
+def test_lighter_split_keys_route_ioc_to_the_taker_key():
+    from arbtwin.config import LighterCredentials
+    from arbtwin.venues.lighter import LighterVenue
+
+    creds = LighterCredentials(api_private_key="aa", api_key_index=4,
+                               api_private_key_taker="bb", api_key_index_taker=5,
+                               account_index=767659)
+    v = LighterVenue(creds)
+    created = []
+
+    class FakeClient:
+        def __init__(self, base_url, account_index, api_private_key, api_key_index):
+            created.append(api_key_index)
+
+    import types, sys
+    mod = types.ModuleType("arbtwin.venues.lighter_trade")
+    mod.LighterTradeClient = FakeClient
+    sys.modules["arbtwin.venues.lighter_trade"] = mod
+    try:
+        assert v._trader(taker=False) is v._trader(taker=False)      # cached per slot
+        assert v._trader(taker=True) is not v._trader(taker=False)
+        assert created == [4, 5]
+    finally:
+        sys.modules.pop("arbtwin.venues.lighter_trade", None)
+
+
+def test_lighter_without_taker_key_falls_back_to_the_single_key():
+    from arbtwin.config import LighterCredentials
+    from arbtwin.venues.lighter import LighterVenue
+
+    creds = LighterCredentials(api_private_key="aa", api_key_index=4, account_index=1)
+    v = LighterVenue(creds)
+    created = []
+
+    class FakeClient:
+        def __init__(self, base_url, account_index, api_private_key, api_key_index):
+            created.append(api_key_index)
+
+    import types, sys
+    mod = types.ModuleType("arbtwin.venues.lighter_trade")
+    mod.LighterTradeClient = FakeClient
+    sys.modules["arbtwin.venues.lighter_trade"] = mod
+    try:
+        v._trader(taker=True)
+        assert created == [4]          # no taker key configured -> single key
+    finally:
+        sys.modules.pop("arbtwin.venues.lighter_trade", None)
