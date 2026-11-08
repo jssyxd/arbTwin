@@ -600,7 +600,14 @@ class TwinEngine:
                             okx_book.depth_usd(100.0), hard_cap_usd=limits.max_notional_usd)
         b = max_position_usd(lt_eq, st.spec_lighter.max_leverage, limits.max_margin_usage_pct,
                             lt_book.depth_usd(100.0), hard_cap_usd=limits.max_notional_usd)
-        return max(0.0, min(a, b) * size_factor)
+        notional = max(0.0, min(a, b) * size_factor)
+        # Lighter rejects anything below its `min_quote_amount` ($10 on every
+        # perp today).  With a tiny account, sizing can fall under it -> skip the
+        # round instead of spraying rejects at the venue.
+        venue_min = max(st.spec_lighter.min_quote or 0.0, st.spec_okx.min_quote or 0.0)
+        if venue_min and notional < venue_min:
+            return 0.0
+        return notional
 
     def wave_step(self, snap: dict) -> list[dict]:
         """One poll of the round state machine for every symbol in the universe."""
