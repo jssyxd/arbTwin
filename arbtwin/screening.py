@@ -76,6 +76,9 @@ class ScreenRow:
     score: float = 0.0
     session: str = "crypto"
     maker_fee_bps: float = 0.0
+    b_star_bps: float = 0.0
+    spread_okx_bps: float = 0.0
+    spread_lighter_bps: float = 0.0
     net_taker_bps: float = 0.0
     net_maker_bps: float = 0.0
     preferred_mode: str = "hedge_now"
@@ -88,6 +91,7 @@ class ScreenRow:
             "unit_ratio": round(self.unit_ratio, 8),
             "sigma_1h_bps": round(self.sigma_1h_bps, 2),
             "basis_sigma_bps": round(self.basis_sigma_bps, 2),
+            "b_star_bps": round(self.b_star_bps, 2),
             "band_bps": round(self.band_bps, 2),
             "session": self.session,
             "preferred_mode": self.preferred_mode,
@@ -195,6 +199,14 @@ def screen_symbols(cfg: AppConfig, okx: OkxVenue, lighter: LighterVenue,
         except Exception as exc:
             row.reject_reasons.append(f"book fetch failed: {exc}")
             continue
+        # Break-even basis: fees + the half-spread you give up on BOTH legs twice
+        # (entry and exit) + an adverse-selection margin.  Screening on fees alone
+        # (4 bps) approves books like GRAM whose OKX spread alone is 9 bps.
+        adverse_margin_bps = float((cfg.risk.get("screening") or {}).get("adverse_margin_bps", 1.0))
+        row.spread_okx_bps = okx_book.spread_bps
+        row.spread_lighter_bps = lt_book.spread_bps
+        row.b_star_bps = (fee_bps + 2.0 * ((row.spread_okx_bps + row.spread_lighter_bps) / 2.0)
+                          + adverse_margin_bps)
         row.depth_okx_1pct, cov_okx, comp_okx = okx_book.depth_covered(100.0)
         row.depth_lighter_1pct, cov_lt, comp_lt = lt_book.depth_covered(100.0)
         dens_okx, _, _ = okx_book.depth_density_usd_per_bps()
@@ -238,7 +250,7 @@ def screen_symbols(cfg: AppConfig, okx: OkxVenue, lighter: LighterVenue,
 
         # 6. score: expected net edge * fill probability, best of the two modes
         row.net_taker_bps = row.basis_p95_bps - fee_bps - latency - cfg.limits.max_slippage_bps
-        row.net_maker_bps = row.basis_p95_bps - row.maker_fee_bps
+        row.net_maker_bps = row.basis_p95_bps - row.b_star_bps
         best_net = max(row.net_taker_bps, row.net_maker_bps)
         row.preferred_mode = "hedge_now" if row.net_taker_bps >= row.net_maker_bps else "dual_maker"
         row.score = best_net * max(row.fill_probability, 1e-6) * min(card.size_factor, 1.0)
@@ -247,8 +259,9 @@ def screen_symbols(cfg: AppConfig, okx: OkxVenue, lighter: LighterVenue,
             continue
         if best_net <= 0:
             row.reject_reasons.append(
-                f"cost exceeds the 95th-pct basis move (taker-hedge {row.net_taker_bps:.1f}bps, "
-                f"maker/maker {row.net_maker_bps:.1f}bps)")
+                f"basis p95 {row.basis_p95_bps:.1f}bps < b* {row.b_star_bps:.1f}bps "
+                f"(fees {row.maker_fee_bps:.1f} + 2x half-spread {row.spread_okx_bps:.1f}/{row.spread_lighter_bps:.1f})"
+                f" -> maker net {row.net_maker_bps:+.1f}bps")
             continue
         if row.score < min_score:
             row.reject_reasons.append(f"score {row.score:.2f} < {min_score}")

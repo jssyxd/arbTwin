@@ -122,6 +122,15 @@ class WaveTrader:
                 order.symbol = symbol
                 if rnd.state is wave.RoundState.FLAT:
                     continue
+                existing = self.quotes.get((symbol, order.venue))
+                if (existing and existing.side == order.side
+                        and abs(existing.px - order.px) <= max(1e-12, abs(order.px) * 1e-9)
+                        and abs(existing.qty_base - order.qty_base) <= 1e-12):
+                    # same price, same size: cancelling and re-placing every poll
+                    # would churn the nonce stream (and one venue charges latency
+                    # for it) with no effect on queue position.
+                    executed.append({"kind": "hold", "venue": order.venue, "px": order.px})
+                    continue
                 self._drop_quotes(symbol, order.venue)          # re-peg: one quote per venue
                 try:
                     fill = self.place(order)

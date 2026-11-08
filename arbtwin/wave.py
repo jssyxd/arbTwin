@@ -66,7 +66,9 @@ class WaveParams:
     exit_deadline_s: float = 3600.0    # 60 min of passive exit, then one IOC
     max_hold_h: float = 4.0
     freeze_px_on_trigger: bool = True
-    min_edge_bps: float = 0.5          # require a positive passive net before entering
+    # 0.5 bps was noise: with 4 bps of fees and 2-8 bps of half-spread a
+    # "half a basis point" of net edge cannot pay for a single bad fill.
+    min_edge_bps: float = 2.0
     adverse_basis_stop_bps: float = 25.0
 
 

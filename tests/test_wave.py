@@ -169,3 +169,24 @@ def test_pnl_of_a_completed_round():
     assert r.state is RoundState.FLAT
     pnl = round_pnl_bps(r)
     assert pnl is not None and pnl > 0
+
+def test_unchanged_quote_is_not_cancelled_and_replaced():
+    from arbtwin.wavetrader import WaveTrader
+    from arbtwin.models import Book, Fill
+
+    placed, cancelled = [], []
+    trader = WaveTrader(
+        {"X": WaveParams(entry_bps=14.0, exit_bps=4.5)},
+        place=lambda o: (placed.append((o.venue, o.side, o.px)),
+                         Fill(o.venue, "X", o.side, o.qty_base, o.px))[1],
+        cancel=lambda s, v, oid: cancelled.append((v, oid)) or True,
+    )
+    okx = Book("okx", "X", bids=[(99.98, 500)], asks=[(100.02, 500)])
+    lt = Book("lighter", "X", bids=[(100.22, 500)], asks=[(100.24, 500)])
+    trader.step("X", 20.0, okx, lt, 1.0, 4.0, 16.0)      # first poll: place both legs
+    assert len(placed) == 2
+    trader.step("X", 20.0, okx, lt, 1.0, 4.0, 16.0)      # unchanged prices: no churn
+    assert len(placed) == 2 and cancelled == []
+    okx2 = Book("okx", "X", bids=[(99.96, 500)], asks=[(100.00, 500)])  # touch moved
+    trader.step("X", 20.0, okx2, lt, 1.0, 4.0, 16.0)
+    assert len(placed) == 3 and cancelled              # only the moved leg is re-pegged

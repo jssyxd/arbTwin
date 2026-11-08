@@ -357,3 +357,37 @@ def test_wave_does_not_open_a_second_round_while_closing():
     engine.wave_step(snap)
     assert rnd.round_id == before
     assert rnd.state.value in ("exit_quoting", "exit_partial", "hedged")
+
+
+# --------------------------------------------------------------------------- #
+# safety: closed session and orphaned positions must both block entries
+# --------------------------------------------------------------------------- #
+def test_closed_session_blocks_entries():
+    cfg = mk_cfg()
+    cfg.symbols = [{"symbol": "AAPL", "unit_ratio": 1.0, "sigma_1h_bps": 40.0,
+                    "basis_sigma_bps": 6.0, "session": "us_equity",
+                    "entry_bps_p95": 14.0, "exit_bps_p50": 4.5}]
+    engine = TwinEngine(cfg, FakeVenue("okx", 100.0, 100.05), FakeVenue("lighter", 101.4, 101.45))
+    engine.load_universe()
+    st = engine.states["AAPL"]
+    # force "closed": a Session whose window can never be open
+    from arbtwin.anchor import Session
+    st.session = Session(kind="us_equity", open_hhmm=(0, 0), close_hhmm=(0, 0))
+    snap = engine.snapshot()
+    assert snap["gates"]["AAPL"]["session_open"] is False
+    assert snap["rows"][0].action == "BLOCK"
+    assert any("session closed" in r for r in snap["rows"][0].reasons)
+
+
+def test_orphan_position_blocks_wave_entries_until_flat():
+    engine, okx, lt = mk_engine()
+    engine.cfg.strategy = "wave"
+    engine.load_universe()
+    # simulate a restart with a live position and no in-memory round
+    engine.orphans["AAPL"] = VenuePosition("lighter", "AAPL", qty_base=-30.0, avg_entry=101.0)
+    out = engine.wave_step(engine.snapshot())
+    assert out and out[0].get("blocked") == "orphan position on venue"
+    assert engine.wave.open_quotes("AAPL") == []
+    # once the venue reports flat, the block is lifted
+    engine._update_orphans({"positions": {}})
+    assert "AAPL" not in engine.orphans

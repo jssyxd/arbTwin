@@ -151,6 +151,11 @@ class TwinEngine:
         self.exits = ExitQueue()
         self.maker_quotes: list[MakerQuote] = []
         self.wave: Optional[WaveTrader] = None
+        # Positions that exist on a venue but have no in-memory round.  They appear
+        # after a restart / crash / OOM: the process has no memory of the round,
+        # so without this the engine believes FLAT and quotes a *second* entry on
+        # top of a live position.
+        self.orphans = {}
         self.trades: list[dict] = []
         self.alerts: list[dict] = []
         self._loaded = False
@@ -187,6 +192,7 @@ class TwinEngine:
                 spec_lighter=lighter_specs[symbol],
                 session=session,
             )
+        self._reconcile_orphans()
         if self.cfg.strategy == "wave":
             params = {s: st.wave_params for s, st in self.states.items() if st.wave_params}
             if params:
@@ -246,6 +252,21 @@ class TwinEngine:
         merged = GateVerdict(allow=True)
         for v in verdicts:
             merged = merged.merge(v)
+
+        # P1-3 was documented but never wired: `AnchorBook` was imported and never
+        # instantiated, so `session: us_equity` had zero effect and the engine
+        # would happily quote a closed-market perp -- exactly the regime where the
+        # venue book is measured as frozen (stale 0.986, ~53 updates/120s) and the
+        # only fill you get is the reopen gap.  Block entries outside the session.
+        now = time.time()
+        session_open = st.session.is_open(now)
+        merged.metrics["session_open"] = session_open
+        if not session_open:
+            merged.allow = False
+            merged.level = "block"
+            merged.reasons.append(
+                f"{st.symbol}: reference session closed ({st.session.kind}) — anchor frozen, "
+                f"entries disabled (exits unaffected)")
 
         # per-leg funding is reported here and gated on the *intended* direction
         # after pricing (a hot leg is only expensive if you end up paying it)
@@ -566,6 +587,36 @@ class TwinEngine:
         self._persist_trade(trade)
         self._alert("info", symbol, "dual-maker both legs filled — position opened")
 
+    # ------------------------------------------------------------------ reconciliation
+    def _reconcile_orphans(self) -> None:
+        """Read venue positions at startup; anything open is an orphan until flat."""
+        try:
+            positions = self.broker.positions()
+        except Exception as exc:
+            self._alert("critical", "engine", f"cannot read venue positions at startup: {exc}")
+            return
+        for _key, pos in positions.items():
+            if abs(getattr(pos, "qty_base", 0.0)) > 1e-12:
+                self.orphans[pos.symbol] = pos
+                self._alert("critical", pos.symbol,
+                            f"orphan position at startup: {pos.venue} {pos.qty_base:+.6f} "
+                            f"@ {pos.avg_entry} — entries blocked until flat")
+        if not positions and not self.cfg.dry_run:
+            self._alert("warn", "engine", "startup position check returned empty")
+
+    def _update_orphans(self, snap: dict) -> None:
+        """Clear orphans once both legs are flat again (cheap: reuses the snapshot)."""
+        if not self.orphans:
+            return
+        live: dict[str, float] = {}
+        for _key, pos in (snap.get("positions") or {}).items():
+            symbol = pos.get("symbol") or _key.split(":")[-1]
+            live[symbol] = live.get(symbol, 0.0) + abs(float(pos.get("qty_base") or 0.0))
+        for symbol in list(self.orphans):
+            if live.get(symbol, 0.0) <= 1e-12:
+                self.orphans.pop(symbol, None)
+                self._alert("info", symbol, "orphan cleared: both legs flat")
+
     # ------------------------------------------------------------------ wave mode
     def _wave_place(self, order: OrderRequest) -> Fill:
         st = self.states.get(order.symbol)
@@ -617,6 +668,9 @@ class TwinEngine:
         for row in snap["rows"]:
             st = self.states.get(row.symbol)
             if st is None or st.wave_params is None or not self.wave.params.get(row.symbol):
+                continue
+            if row.symbol in self.orphans:
+                out.append({"symbol": row.symbol, "blocked": "orphan position on venue"})
                 continue
             if not st.last_gate or not st.last_gate.allow:
                 continue
@@ -742,6 +796,8 @@ class TwinEngine:
     # ------------------------------------------------------------------ loop
     def run_once(self) -> dict:
         snap = self.snapshot()
+        self._update_orphans(snap)
+        self._reconcile_orphans()
         if self.cfg.strategy == "wave":
             executed = self.wave_step(snap)
             risk_actions = []
