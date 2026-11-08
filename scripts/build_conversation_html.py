@@ -100,7 +100,7 @@ def render(md: str, offset: int = 0) -> str:
             continue
 
         buf = []
-        while i < len(lines) and lines[i].strip() and not re.match(r"^(#{2,4}\s|```|\||>|\s*[-*]\s|\s*\d+\.\s)", lines[i].strip()):
+        while i < len(lines) and lines[i].strip() and not re.match(r"^(#{2,4}\s|```|||>|\s*[-*]\s|\s*\d+\.\s)", lines[i].strip()):
             buf.append(lines[i].strip())
             i += 1
         out.append(f"<p>{inline(' '.join(buf))}</p>")
@@ -381,6 +381,183 @@ TURNS.append({
     ],
 })
 
+
+TURNS.append({
+    "n": 5,
+    "title": "组织五个 agent 评审另一会话的 basis_cal 分析",
+    "user": """D:/Users/da/Desktop/对话.txt 组织多agent讨论这个对话，对我们的项目有哪几点可以校正、优化的""",
+    "assistant": """## 方法
+
+`HERDR_ENV` 未设置 → 本会话不在 Herdr pane 内，按 skill 规定不越权操控 Herdr；改用 harness 的 `task` 起 **5 个并行透镜**（统计方法论 / 策略机制 / 执行风控 / 数据契约 / 运维验收），每条结论自己复算一遍。产物 `docs/REVIEW-2026-11-08.md`。
+
+## 被评审的另一会话
+
+`basis_cal` 工具对同一对交易所的独立分析，结论 **NOT TRADEABLE**：`b* ≈ 7.6bps` vs RTH `p95|basis| ≈ 1.2bps`；闭市 p95 是 RTH 的 78×；开盘跳空 43.8bps（典型步长的 65×）；闭市时 Lighter 盘口 `stale 0.986`（120s 仅 53 次更新）。
+
+## 五透镜账本（共 30 条发现）
+
+| 透镜 | 发现 | 已修 | 未修 |
+|---|---:|---:|---:|
+| 自查 | 9 | 8 | 1 |
+| ExecutionRisk | 8 | 8 | 0 |
+| StatsMethodology | 3 | 3 | 0 |
+| StrategyMechanics | 3 | 3 | 0 |
+| OpsAndValidation | 4 | 3 | 1 |
+| DataContracts | 3 | 3 | 0 |
+
+## 会亏钱/会静默失效的 9 条（节选）
+
+| 问题 | 证据 |
+|---|---|
+| 只扣 4bps 手续费、没有 `b*` | `screening.py` 原判据 `p95 − 4bps > 0` |
+| anchor 是死代码 | `grep "AnchorBook("` 无结果；`session` 只赋值不判断 |
+| wave 重启失忆 | `rounds.jsonl` 只写不读；`wave_step` 不读 venue 持仓 |
+| post-only 挂在可成交价 | sell=bid / buy=ask → 两所都拒单 |
+| live 成交靠盘口穿越虚构 | `poll_fills` 不看渠道回报；撤单失败被吞 |
+| ABORT 成交记错腿 | `on_fill` 路由漏了 ABORT_UNWIND → 永久卡死 |
+| 只有一半基差方向可交易 | 触发用 `abs(basis)`，边界用带符号 basis |
+| Lighter 权益读成 0 | `assets[].balance` 恒 0，真实在 `collateral` |
+| OKX `books.size` 是"张" | XAU `ctVal=0.001` → 深度 **1000×** 虚高 |
+
+## 结论变化
+
+* 收益口径：每轮捕获是 `E[basis | basis≥p95] − 出场阈值`，不是 p95；旧文档"单次毛利 8–11bps"错误约 2×。
+* 选票按 b* 重排：COIN / SOXL 过线，GRAM（b* 17.4）/ VVV / LIT 出局。
+* `78×` 不能外推：我们 14 天数据按 session 拆分是 0.82–1.63×（SPY 那种极紧标的是特例）。""",
+    "tools": [
+        ("5 个 task 并行评审", "每个透镜读 transcript + repo，返回带 file:line 的发现；耗时 20–83 分钟不等"),
+        ("回归验证", "b*/per-session/事件研究/ctVal/权益字段 逐条复算，发现并修掉 12 处"),
+        ("测试", "71 → 84 个单测，全部离线可跑"),
+    ],
+})
+
+TURNS.append({
+    "n": 6,
+    "title": "接入 accountbot2：凭据、IP 白名单、IPv6 陷阱、实盘部署",
+    "user": """accountbot2实盘 …资金31.47u…apikey/secretkey…Lighter key4/key5…（随后补充 OKX PASSPHRASE 与两张 Lighter 截图）""",
+    "assistant": """## 三条硬阻塞 → 两条被证据解除
+
+| # | 原判断 | 证据 | 结论 |
+|---|---|---|---|
+| 1 | OKX 缺 passphrase | 收到后签名通过，但返回 `50110` IP 白名单 | passphrase 正确；**只能在白名单 IP 上跑** |
+| 2 | Lighter 未入金 | `available_balance = 27.629041`，`assets[].balance` 恒 0 | 已入金；是**代码读错字段** |
+| 3 | Lighter key 未注册 | 截图 index 4/5 均在，`nextNonce` 返回 `200 / nonce 1` | 已注册 |
+
+## 发现 1：双栈主机默认走 IPv6，撞白名单
+
+```text
+50110: Your IP 2400:8d60:5::1:5774:50ed is not included in your API key's IP whitelist.
+```
+
+白名单只有 IPv4（155.254.60.38 / 23.27.186.126）。修法：`ARBTWIN_FORCE_IPV4`（默认开，只重排 getaddrinfo，IPv6-only 主机仍可用）。
+
+## 发现 2：真实资金与费率（白名单 IP 实测）
+
+| 项 | 值 |
+|---|---|
+| OKX `totalEq` | 31.4379 USDT（USDT eq/avail 31.4794） |
+| OKX 费率 | Lv1：maker **2bps** / taker **5bps**（API 返回 −0.0002 / −0.0005） |
+| Lighter 权益 | 27.629041 USDC（挂单/吃单 0%） |
+| 合计 | **≈ $59.1** |
+
+## 服务器完成的操作
+
+```text
+git pull → ff313c1（wave / 双 key / b* / 单位修正 全部就位）
+.env 640 arbtwin:arbtwin，passphrase SET，两把 Lighter key 在册
+systemd restart → active，NRestarts=0
+swap 1024M，磁盘 39%，内存 275/960MB
+OKX/Lighter WS 均 connected；Lighter 盘口 238/189 与 63/124 档
+```""",
+    "tools": [
+        ("vibeshell ssh arbtwin-vps", "session 3398；sftp put 上传 .env（不上命令行传密钥）"),
+        ("账户核实脚本", "OKX balance/trade-fee/positions + Lighter equity/positions + nextNonce 4/5"),
+        ("IPv6 修复", "venues/base.py `_prefer_ipv4()`，回归后 50110 消失"),
+    ],
+})
+
+TURNS.append({
+    "n": 7,
+    "title": "每个标的跑完一轮（机制回放）+ 3 小时监控",
+    "user": """SOXL / COIN / LIT / VVV / GRAM 每个跑一轮 结束，都跑通一轮后停止research，期间发现明显bug，不符合预期的记录下来，最后一起汇报。每3小时监控""",
+    "assistant": """## 为什么不是实盘跑
+
+周末（2026-11-08 周日）：SOXL/COIN 是 `us_equity` → 会话门禁整周末关闭；LIT/VVV/GRAM 在 b* 口径下净额为负。且当时 live 仍被代码拒绝。所以用**确定性机制回放**：真实小时线 → 5 分钟子步插值 → 合成双侧盘口（实测半价差）→ 出厂阈值 → 假时钟。
+
+## 结果：5/5 回到 FLAT，但只有 1 个走到双腿对冲
+
+| 标的 | 入场 |basis| | 结局 | 净额 | 路径 |
+|---|---:|---|---:|---|
+| SOXL | 12.6 | abort | — | entry→partial→基差回落→被动 unwind |
+| COIN | 10.6 | abort | — | partial→基差回落→unwind 超时→IOC |
+| LIT | 11.6 | abort | — | partial→90min 到期→unwind→IOC |
+| **VVV** | 12.2 | **hedged→exit** | **−30.66 bps** | 对冲完成→4h 超时→出场 60min 未成交→IOC |
+| GRAM | 19.3 | abort | — | partial→90min 到期→unwind→IOC |
+
+## 发现并修复
+
+1. **裸腿止损没有波动率标定**：固定 60bps，而 SOXL `σ_1h = 244bps`、LIT 155bps → 首轮 4/5 在 100–273bps 的正常波动上 abort。现在 `stop = max(60, 2·σ·√dt)`。
+2. 3h 监控脚本的 python 块被 heredoc 吃掉（只记健康不记矩阵）。
+3. push 走代理时 HTTP/2 握手失败 → `-c http.version=HTTP/1.1`。
+
+## 记录未修
+
+| # | 问题 | 数据 |
+|---|---|---|
+| 1 | `p_fail` 实测 ≈0.8（模型假设 0.15） | 5 次入场 4 次只成交一条腿 |
+| 2 | 出场 deadline 是真正瓶颈 | 唯一走完的轮，60min 被动出场未成交 → IOC −30.66bps |
+| 3 | abort 轮 PnL 不进统计 | `round_pnl_bps()` 需要双腿 exit |
+| 4 | 小时线插值仍比 tick 乐观 | 固有上限 |
+
+## 监控已上线
+
+`arbtwin-monitor3h.timer`（`OnCalendar=*:0/3`）→ `/opt/arbtwin/state/monitor_3h.log`：服务状态、内存/swap/磁盘、snapshot 新鲜度（>30min 告警）、每标的 basis/band/action、critical 计数。""",
+    "tools": [
+        ("scripts/mechanics_run.py", "5 分钟子步 + 假时钟，5 个标的各跑一轮；报告写入 docs/MECHANICS-ROUNDS-2026-11-08.md"),
+        ("systemd timer", "arbtwin-monitor3h.timer 安装并手动触发一次，矩阵行验证通过"),
+    ],
+})
+
+TURNS.append({
+    "n": 8,
+    "title": "订单状态对账 + 实盘开启",
+    "user": """现在开始写订单状态对账，实盘开启""",
+    "assistant": """## 成交来源换成 venue 事实
+
+`arbtwin/reconcile.py`：每 poll 读两所持仓，与持久化账本 `state/positions.json` 比 → delta = 成交（方向取符号，价格取交易所 `avg_entry`）。启动顺序：`cancel_all`（清昨日 GTC）→ `ledger.seed(当前持仓)`（不把历史仓位当成交）→ 轮询。
+
+live 解锁条件写死在 `_assert_live_is_safe()`：`ARBTWIN_FILL_SOURCE=positions` **且**两所凭据齐全，否则 `exit 2`（不产生崩溃循环）。
+
+## 顺带修掉一个 sizing 事故
+
+旧代码用**交易所最大杠杆**（OKX 50–100x）算名义 → $59 账户被算成 **$3000/腿**。现在：
+
+```text
+杠杆 = min(venue_max, target_leverage=3)
+名义 = min(权益×3×0.35, 1%深度×10%, ARBTWIN_MAX_NOTIONAL=15)
+```
+
+## 实盘运行验证
+
+| 项 | 实测 |
+|---|---|
+| 服务 | `active`，MainPID 35713，`NRestarts=0` |
+| 模式 | snapshot `dry_run: False` |
+| 账户 | OKX 31.4794 USDT / Lighter 27.6290 USDC |
+| 账本 | `{"positions": {}}`（干净起点） |
+| 决策流 | `SOXL BLOCK basis 1.87 / trigger 12.4`、`COIN BLOCK basis −1.39 / trigger 10.54`（周日，会话关闭，正确拦截） |
+| 监控 | 3h timer 下一次 00:00 +08 |
+
+## 周一预期的真实形态
+
+按机制回放，先出现的多半是**若干次 abort**（成本 ≈ 双边手续费+价差 ≈ 6–9bps × $15 ≈ $0.01–0.015/次），完整跑通的轮次很少，且可能付一次出场 IOC。这正是"每个标的跑一轮"要暴露的东西，`state/rounds.jsonl` 会逐轮记录状态、abort 原因与 IOC 成本。""",
+    "tools": [
+        ("reconcile.py + 引擎接线", "启动清理、账本 seed、每 poll 对账；新增 2 个单测（86 个全部通过）"),
+        ("实盘开关", ".env ARBTWIN_DRY_RUN=0 / FILL_SOURCE=positions / MAX_NOTIONAL=15 / TARGET_LEVERAGE=3；unit 加 --i-know-what-im-doing"),
+        ("上线验证", "systemctl active、dry_run False、两所权益实测、BLOCK 原因=周日"),
+    ],
+})
+
 TWEETS = """2118827815080452293 | Nov 6, 2026 | Arbing Anthropic between Hyperliquid and Lighter is one of the best thing you can do currently to print
 
 Lighter price was 8% below HL price this morning, then it went to parity in the afternoon, now back to 5% below Hyperliquid
@@ -486,6 +663,29 @@ And of course this can be easily automated to monitor every pair on every dex
 1995490097161220175 | Dec 1, 2025 | 2m market have just been disputed"""
 
 KEY_TABLES = [
+    ("五透镜评审账本", """| 透镜 | 发现 | 已修 | 未修 |
+|---|---:|---:|---:|
+| 自查 | 9 | 8 | 1 |
+| ExecutionRisk | 8 | 8 | 0 |
+| StatsMethodology | 3 | 3 | 0 |
+| StrategyMechanics | 3 | 3 | 0 |
+| OpsAndValidation | 4 | 3 | 1 |
+| DataContracts | 3 | 3 | 0 |"""),
+    ("accountbot2 实机核实（白名单 IP、强制 IPv4）", """| 项 | 值 |
+|---|---|
+| OKX totalEq | 31.4379 USDT（avail 31.4794） |
+| OKX 费率 | Lv1 maker 2bps / taker 5bps |
+| Lighter 权益 | 27.629041 USDC（富余 `collateral`，`assets[].balance` 恒 0） |
+| Lighter keys | index 4 / 5，nextNonce 200 / nonce 1 |
+| 合计 | ≈ $59.1 |
+| 关键坑 | 双栈主机默认走 IPv6 → 50110；`ARBTWIN_FORCE_IPV4=1` 解决 |"""),
+    ("机制回放：每个标的跑一轮", """| 标的 | 入场 |basis| | 结局 | 净额 |
+|---|---:|---|---:|
+| SOXL | 12.6 | abort（基差回落） | — |
+| COIN | 10.6 | abort（unwind 超时→IOC） | — |
+| LIT | 11.6 | abort（90min 到期） | — |
+| VVV | 12.2 | hedged→exit（4h 超时→IOC） | **−30.66 bps** |
+| GRAM | 19.3 | abort（90min 到期） | — |"""),
     ("单位一致性（7 天小时线，比值 = Lighter/OKX）", """| 标的 | 比值均值 | 比值 CV | 收益率相关 | 判定 |
 |---|---:|---:|---:|---|
 | ETH | 1.0001 | 0.011% | 0.9997 | 同一标的 |
@@ -523,7 +723,16 @@ rejected 163:
 | OKX `fundingRate` | 0.0001 | 小数/8h → 10.95% APR |"""),
 ]
 
-COMMITS = """a5fbd59 feat: arbTwin 0.1.0 — OKX<->Lighter twin-venue basis engine (P0-P8)
+COMMITS = """abb91b3 feat(mechanics): one full round per symbol + vol-scaled naked-leg stop
+e1d03a4 feat(live): position-delta fill reconciliation + live gate + leverage-correct sizing
+014f18e chore(live): live enabled in docs, calibration note, flat-account alert downgraded
+6f45ba6 fix(data): OKX book sizes are contracts (1000x depth error on XAU)
+f7e0879 docs(live): verified balances and fee tier from the whitelisted host
+ff313c1 fix(net): prefer IPv4 for venue APIs
+3583873 test: lock the OKX contract-size conversion
+87f3538 fix(stats+ops): capture is E[b|b>=p95]-exit, per-session thresholds, real Lighter equity
+9e675b2 fix(strategy): maker edge must use |basis|
+a5fbd59 feat: arbTwin 0.1.0 — OKX<->Lighter twin-venue basis engine (P0-P8)
 22cee9d test: cover the screening funnel (approve path, divergent reject, session split)
 28d930d feat: generated universe (12/175 pass), OKX stats TTL cache, poll-rate floor
 c687518 docs: record the first full screen (12/175) and clarify preferred_mode is advisory
@@ -544,6 +753,8 @@ TREE = """arbtwin/
   issuer_risk.py   P2-6 结构风险卡（7 条硬红旗）
   manipulation.py  P2-7 操纵成本 / 薄盘口惩罚
   exitqueue.py     P2-8 带 deadline 的被动退出队列
+  reconcile.py     实盘成交对账（持仓增量，账本持久化 + 启动 seed）
+  wavetrader.py    状态机执行器（保留/撤单/成交回填）
   engine.py        决策、执行、maker 报价轮询、风控退出、max hold
   screening.py     universe 漏斗（→ config/symbols*.yaml）
   monitor.py       8 个监控信号 + JSONL + webhook
