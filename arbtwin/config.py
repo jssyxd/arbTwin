@@ -132,6 +132,11 @@ class EngineLimits:
     max_quote_ttl_s: int = 120
     max_book_age_s: float = 3.0
     expected_hold_h: float = 2.0
+    # A hedge that fails repeatedly is the failure mode that turns a market-neutral
+    # book directional (Cbb0fe's $1.1M gold incident: stale position data -> the bot
+    # kept "correcting" a delta that did not exist). Three strikes, then bench it.
+    max_hedge_failures: int = 3
+    hedge_failure_cooldown_s: float = 300.0
     max_hold_h: float = 4.0            # basis reverts in <2h (measured half-life 0.8-1.7h)
     cooldown_after_fill_s: float = 10.0
     emergency_stop_loss_pct: float = 0.12    # single-leg adverse move from entry

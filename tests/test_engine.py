@@ -432,3 +432,44 @@ def test_position_reconciliation_drives_a_live_round(tmp_path):
                                        "okx:AAPL": P("okx", "AAPL", 30.0, 100.0)}
     engine._reconcile_positions()
     assert rnd.state.value == "hedged"
+
+
+def test_hedge_failures_bench_the_symbol():
+    """Three failed hedges in a row must stop new entries for that symbol.
+
+    Portable lesson from Cbb0fe's $1.1M gold incident: a leg that cannot be hedged
+    keeps "correcting" itself into a directional bet.
+    """
+    engine, okx, lt = mk_engine()
+
+    def flaky(order, spec):
+        if order.venue == "okx":
+            raise RuntimeError("hedge rejected")
+        return real_place(order, spec)
+
+    real_place = engine.broker.place
+    engine.broker.place = flaky  # type: ignore[assignment]
+    for _ in range(engine.cfg.limits.max_hedge_failures):
+        engine.states["AAPL"].cooldown_until = 0.0
+        snap = engine.snapshot()
+        snap["rows"][0].action = "ENTER"
+        engine.execute_best(snap)
+    assert "AAPL" in engine.benched
+    assert any(a["level"] == "critical" for a in engine.alerts)
+
+    # benched symbol must not be quoted even when the row says ENTER
+    engine.cfg.strategy = "wave"
+    engine.broker.place = real_place  # type: ignore[assignment]
+    engine.load_universe()
+    out = engine.wave_step(engine.snapshot())
+    assert any(str(x.get("blocked", "")).startswith("benched") for x in out)
+    assert engine.wave.open_quotes("AAPL") == []
+
+    # a successful hedge resets the streak
+    engine.hedge_fail_streak["AAPL"] = 2
+    engine.benched.clear()
+    engine.states["AAPL"].cooldown_until = 0.0
+    snap = engine.snapshot()
+    snap["rows"][0].action = "ENTER"
+    engine.execute_best(snap)
+    assert engine.hedge_fail_streak.get("AAPL", 0) == 0

@@ -159,6 +159,9 @@ class TwinEngine:
         # so without this the engine believes FLAT and quotes a *second* entry on
         # top of a live position.
         self.orphans = {}
+        # symbol -> (until_ts, reason): hedge-failure circuit breaker
+        self.benched: dict[str, tuple[float, str]] = {}
+        self.hedge_fail_streak: dict[str, int] = {}
         self.trades: list[dict] = []
         self.alerts: list[dict] = []
         self._loaded = False
@@ -454,6 +457,15 @@ class TwinEngine:
         elapsed_ms = (time.time() - started) * 1000
 
         if not hedged or hedge_fill is None:
+            streak = self.hedge_fail_streak.get(st.symbol, 0) + 1
+            self.hedge_fail_streak[st.symbol] = streak
+            if streak >= self.cfg.limits.max_hedge_failures:
+                until = time.time() + self.cfg.limits.hedge_failure_cooldown_s
+                self.benched[st.symbol] = (until, f"{streak} consecutive hedge failures")
+                self.hedge_fail_streak[st.symbol] = 0
+                self._alert("critical", st.symbol,
+                            f"hedge failed {streak}x in a row — symbol benched "
+                            f"{self.cfg.limits.hedge_failure_cooldown_s:.0f}s")
             # never leave the leading leg naked: unwind reduce-only
             try:
                 unwind = OrderRequest(plan.leading.venue, plan.leading.symbol,
@@ -467,6 +479,7 @@ class TwinEngine:
             st.cooldown_until = time.time() + self.cfg.limits.cooldown_after_fill_s
             return {"symbol": st.symbol, "status": "unwound", "elapsed_ms": elapsed_ms}
 
+        self.hedge_fail_streak[st.symbol] = 0
         if elapsed_ms > plan.max_unhedged_ms:
             self._alert("warn", st.symbol,
                         f"unhedged {elapsed_ms:.0f}ms > budget {plan.max_unhedged_ms}ms")
@@ -700,6 +713,13 @@ class TwinEngine:
             # stop the management of a position we already hold (exits, re-pegs,
             # entry/exit deadlines).  Otherwise one REST hiccup parks the position
             # with resting orders and no deadline for as long as the outage lasts.
+            until, why = self.benched.get(row.symbol, (0.0, ""))
+            if until:
+                if time.time() < until:
+                    out.append({"symbol": row.symbol, "blocked": f"benched: {why}"})
+                    continue
+                self.benched.pop(row.symbol, None)
+                self._alert("info", row.symbol, f"bench expired ({why}) — entries re-enabled")
             if not holding:
                 if row.symbol in self.orphans:
                     out.append({"symbol": row.symbol, "blocked": "orphan position on venue"})
