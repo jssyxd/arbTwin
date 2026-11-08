@@ -112,6 +112,44 @@ class Book:
             total += sum(px * sz for px, sz in self.asks if px <= hi)
         return total
 
+    def covered_bps(self, side: Optional[str] = None) -> float:
+        """How far from mid the snapshot actually reaches, on the thinner side.
+
+        A 400-level snapshot of BTC reaches ~5 bps from mid (tick 0.013 bps);
+        a 400-level snapshot of AAPL reaches ~220 bps (tick 0.29 bps).  Any
+        "depth within X bps" number is only meaningful up to this distance.
+        """
+        m = self.mid
+        if not m:
+            return 0.0
+        out = []
+        if side in (None, "bid") and self.bids:
+            out.append((m - self.bids[-1][0]) / m * 1e4)
+        if side in (None, "ask") and self.asks:
+            out.append((self.asks[-1][0] - m) / m * 1e4)
+        return min(out) if out else 0.0
+
+    def depth_covered(self, bps: float, side: Optional[str] = None) -> tuple[float, float, bool]:
+        """(notional, covered_bps, complete) for the band `bps` around mid.
+
+        `complete=False` means the book ends before the band does, so the
+        notional is a lower bound.  Gates must never present a lower bound as
+        if it were the measured depth (that is how a BTC book "loses" 95% of
+        its liquidity to a level cap).
+        """
+        covered = min(bps, self.covered_bps(side))
+        usd = self.depth_usd(covered, side)
+        complete = self.covered_bps(side) >= bps
+        return usd, covered, complete
+
+    def depth_density_usd_per_bps(self, side: Optional[str] = None,
+                                 band_bps: float = 100.0) -> tuple[float, float, bool]:
+        """Notional per bp inside the band — scale-free liquidity measure."""
+        usd, covered, complete = self.depth_covered(band_bps, side)
+        if covered <= 0:
+            return 0.0, 0.0, False
+        return usd / covered, covered, complete
+
     def notional_to_cross(self, bps: float, side: str) -> float:
         """Notional needed to walk the book `bps` away from mid on one side."""
         m = self.mid

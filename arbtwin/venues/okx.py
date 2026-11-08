@@ -28,7 +28,7 @@ from ..models import Book, Fill, MarketSpec, MarketStats, OrderRequest, VenuePos
 from .base import ThreadedWs, VenueAdapter, VenueError, http_json
 
 SWAP_TAG = "SWAP"
-DEPTH_LEVELS = 200        # REST depth levels; 5 levels understates 1% depth by ~60x
+DEPTH_LEVELS = 400        # REST max; 5 levels reach ~1.5bps of a 100bps band (59x understatement)
 
 
 class _OkxWs(ThreadedWs):
@@ -83,6 +83,18 @@ class OkxVenue(VenueAdapter):
         # a handful of REST calls instead of ~40 (OKX allows 20 req / 2 s).
         self._stats_cache: dict[str, tuple[float, MarketStats]] = {}
         self.stats_ttl_s = 5.0
+        # `books5` (WS) is 5 levels: fine for pricing, useless for depth gates.
+        # Keep them apart so a fast path can never silently truncate a gate.
+        self._ws_books: dict[str, Book] = {}
+        self.book_ttl_s = 1.5
+        # mark / index / OI are published in bulk for the whole venue.  Three
+        # calls replace 3 x N per-symbol calls; at N=12 that is 36 -> 3.
+        self._bulk: dict[str, dict] = {}
+        self._bulk_ts = 0.0
+        self._bulk_lock = threading.Lock()
+        self.bulk_ttl_s = 5.0
+        self._funding: dict[str, tuple[float, float]] = {}
+        self.funding_ttl_s = 300.0
 
     # ------------------------------------------------------------------ rest
     def _get(self, path: str, params: Optional[dict] = None) -> dict:
@@ -160,6 +172,64 @@ class OkxVenue(VenueAdapter):
             return {s: self._specs[s] for s in symbols if s in self._specs}
         return dict(self._specs)
 
+    # ------------------------------------------------------------------ bulk snapshot
+    def _bulk_snapshot(self) -> dict[str, dict]:
+        """{symbol: {mark, index, oi_usd}} for every SWAP, refreshed at most every TTL.
+
+        Single-flight: with 12 symbols fetched in parallel, an unguarded cache
+        stampede turns 3 bulk calls into 12 x 3 = 36 (measured: 15s -> 24s per
+        poll).  The lock makes concurrent callers wait for one refresh.
+        """
+        if self._bulk and (time.time() - self._bulk_ts) <= self.bulk_ttl_s:
+            return self._bulk
+        with self._bulk_lock:
+            if self._bulk and (time.time() - self._bulk_ts) <= self.bulk_ttl_s:
+                return self._bulk
+            return self._bulk_refresh()
+
+    def _bulk_refresh(self) -> dict[str, dict]:
+        # NOTE: caller holds `_bulk_lock`
+        urls = {
+            "mark": f"{self.creds.base_url}/api/v5/public/mark-price?instType={SWAP_TAG}",
+            "oi": f"{self.creds.base_url}/api/v5/public/open-interest?instType={SWAP_TAG}",
+            "index": f"{self.creds.base_url}/api/v5/market/index-tickers?quoteCcy=USDT",
+        }
+        got: dict[str, dict] = {}
+
+        def fetch(key: str, url: str) -> None:
+            try:
+                got[key] = http_json(url, proxy=self.proxy, timeout=8.0, retries=1)
+            except Exception:
+                got[key] = {}
+
+        import threading as _threading
+
+        pool = [_threading.Thread(target=fetch, args=(k, u), daemon=True) for k, u in urls.items()]
+        for t in pool:
+            t.start()
+        for t in pool:
+            t.join(10.0)
+
+        out: dict[str, dict] = {}
+        for row in (got.get("mark") or {}).get("data", []) or []:
+            sym = str(row.get("instId", "")).split("-")[0].upper()
+            if sym and row.get("markPx"):
+                out.setdefault(sym, {})["mark"] = float(row["markPx"])
+        for row in (got.get("index") or {}).get("data", []) or []:
+            inst = str(row.get("instId", ""))
+            if not inst.endswith("-USDT"):
+                continue
+            sym = inst.split("-")[0].upper()
+            if row.get("idxPx"):
+                out.setdefault(sym, {})["index"] = float(row["idxPx"])
+        for row in (got.get("oi") or {}).get("data", []) or []:
+            sym = str(row.get("instId", "")).split("-")[0].upper()
+            if row.get("oiUsd"):
+                out.setdefault(sym, {})["oi_usd"] = float(row["oiUsd"])
+        if out:
+            self._bulk, self._bulk_ts = out, time.time()
+        return self._bulk
+
     # ------------------------------------------------------------------ market data
     def book(self, symbol: str, levels: int = 0) -> Book:
         """REST snapshot with full depth.
@@ -171,6 +241,10 @@ class OkxVenue(VenueAdapter):
         spec = self._by_symbol.get(symbol) or self.specs([symbol]).get(symbol)
         if not spec:
             raise VenueError(f"okx: unknown symbol {symbol}")
+        with self._lock:
+            cached = self._books.get(symbol)
+        if cached and (time.time() - cached.ts) <= self.book_ttl_s:
+            return cached
         data = http_json(f"{self.creds.base_url}/api/v5/market/books",
                          params={"instId": spec.market_ref, "sz": levels or DEPTH_LEVELS},
                          proxy=self.proxy, timeout=6.0, retries=1)
@@ -193,40 +267,44 @@ class OkxVenue(VenueAdapter):
         if cached and (time.time() - cached[0]) <= self.stats_ttl_s:
             return cached[1]
         book = self.book(symbol)
-        ticker = self._get("/api/v5/market/ticker", {"instId": spec.market_ref})["data"][0]
-        funding = {}
-        try:
-            funding = self._get("/api/v5/public/funding-rate", {"instId": spec.market_ref})["data"][0]
-        except Exception:
-            funding = {}
-        oi = 0.0
-        try:
-            oi_item = self._get("/api/v5/public/open-interest",
-                                {"instType": SWAP_TAG, "instId": spec.market_ref})["data"][0]
-            # oiCcy is base-asset units for USDT-settled swaps
-            oi = float(oi_item.get("oiCcy") or 0.0) * float(ticker.get("last") or book.mid)
-        except Exception:
-            oi = 0.0
-        mark = float(ticker.get("last") or book.mid)
+        bulk = self._bulk_snapshot().get(symbol) or {}
+        # funding is 8-hourly: one call per symbol every 5 minutes is plenty
+        rate, f_ts = self._funding.get(symbol, (0.0, 0.0))
+        if (time.time() - f_ts) > self.funding_ttl_s:
+            try:
+                row = self._get("/api/v5/public/funding-rate", {"instId": spec.market_ref})["data"][0]
+                rate = float(row.get("fundingRate") or 0.0)
+                self._funding[symbol] = (rate, time.time())
+            except Exception:
+                self._funding[symbol] = (rate, time.time())
+                rate = rate
+        mark = float(bulk.get("mark") or book.mid)
+        index = float(bulk.get("index") or mark)
         stats = MarketStats(
             venue=self.name, symbol=symbol,
-            mark_price=float(funding.get("markPx") or mark),
-            index_price=float(funding.get("indexPx") or ticker.get("idxPx") or mark),
-            last_price=float(ticker.get("last") or mark),
+            mark_price=mark,
+            index_price=index,
+            last_price=mark,
             mid_price=book.mid,
-            oi_usd=oi,
+            oi_usd=float(bulk.get("oi_usd") or 0.0),
             oi_limit_usd=0.0,
-            funding_rate=float(funding.get("fundingRate") or 0.0),
+            funding_rate=rate,
             funding_interval_h=self.funding_interval_h,
             ts=time.time(),
         )
         self._stats_cache[symbol] = (time.time(), stats)
         return stats
 
+    def quote(self, symbol: str) -> Book:
+        """WS top-of-book (5 levels): latency, not depth. Never gate on this."""
+        with self._lock:
+            book = self._ws_books.get(symbol)
+        return book if book is not None else self.book(symbol)
+
     def _ingest(self, inst_id: str, bids, asks) -> None:
         symbol = inst_id.split("-")[0].upper()
         with self._lock:
-            self._books[symbol] = Book(self.name, symbol, bids=bids, asks=asks, ts=time.time())
+            self._ws_books[symbol] = Book(self.name, symbol, bids=bids, asks=asks, ts=time.time())
 
     def start(self, symbols: list[str]) -> None:
         specs = self.specs(symbols)

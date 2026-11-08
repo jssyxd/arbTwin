@@ -41,7 +41,7 @@ OKX 之后，可行性与风险结构都变了，必须先看清楚再写代码�
 | 资金费 | 8 小时一次 | **1 小时一次**（`funding_timestamp` 间隔 1h） | 年化必须分别换算：OKX `×3×365`，Lighter `×24×365`；同一 APR 在两边代表完全不同的成本 |
 | 抵押/杠杆 | 分层 MMR，`lever` 最高 100x | `default_initial_margin_fraction`（如 AAPL 666 = 6.66% 初始保证金） | Lighter 的杠杆上限要读市场元数据，不能假设 |
 | 下单身份 | API key + passphrase | **API key 索引 4–254 + zk 签名 + 每 key 独立 nonce 流** | 多进程/多用途要拆 key，否则一个慢交易会卡住后面所有交易 |
-| 深度 | REST 可拉 200 档 | REST 可拉 250 档 | 1% 深度必须用深档：实测 OKX `sz=5` 会把 AAPL 的 1% 深度低估 **59 倍**（$12.4k vs $736k） |
+| 深度 | REST 可拉 400 档 | REST 250 档（订单级） | 见 1.5：档数决定"深度"是否可信，5 档会把 AAPL 的 1% 深度低估 **59 倍** |
 
 **因此 OKX↔Lighter 不是"换个 venue 名字"，而是：成本从 HL 的 1.5bps maker 变成
 OKX 的 2bps maker / 5bps taker；资金费频率变 8 倍；taker 结构上变慢 300ms。**
@@ -89,6 +89,56 @@ taker-hedge 往返，只有 maker/maker（≈4bps）或激励期才有空间。
    成本可从 4bps 降到 0 甚至为负；
 3. **纯被动双腿（dual_maker）**：两边都 post-only，成本只剩 OKX 的 2bps maker，
    代价是承担单腿成交风险（引擎用 watchdog + 被动退出队列兜住）。
+
+### 1.5 "5 档低估 59 倍"到底是什么意思（以及要不要弃用 REST 只用 WS）
+
+**不是 REST vs WS 的问题，是"档数 × tick 密度"的问题。**
+
+AAPL-USDT-SWAP：价格 342.28、`tickSz=0.01` → **1 tick = 0.29 bps**。所谓"1% 深度"是
+343 个 tick 之外的区间，而 `sz=5` 只给你 5 档 ≈ **1.5 bps** 的视野：
+
+| 取数 | 覆盖带宽 | 1% 区间内名义 |
+|---|---:|---:|
+| OKX `books?sz=5` | ≈1.5 bps | **$12.4k**（只数了 5 档） |
+| OKX `books?sz=200` | ≈58 bps | $736k（仍是下界） |
+| OKX `books?sz=400` | ≈218–230 bps | **$765k / $859k（完整覆盖 1%）** |
+
+59 倍就是这么来的（736k / 12.4k ≈ 59）：不是流动性差 59 倍，是**视野窄了 40 倍**。
+
+对照 Lighter：它的订单簿是**稀疏**的（AAPL 88 个价位就跨了 5000bps，NVDA 235 个价位跨
+5100bps），所以 `orderBookOrders?limit=250` 已经**完整覆盖 1% 区间**；实测 Lighter
+REST 深度与 WS `order_book` 快照深度**完全一致**（ratio = 1.00，AAPL/NVDA 双检）：
+
+| 标的 | REST 250 单 | WS 快照 | 1% 深度（WS） |
+|---|---|---:|---:|
+| AAPL | 99 / 91 单 | 88 / 88 价位 | $1,116,714 / $1,282,943 |
+| NVDA | 250 / 165 单 | 235 / 147 价位 | $1,317,264 / $1,360,567 |
+
+**因此当前实现（也是建议）：**
+
+* **定价/成交判定**：WS top-of-book（OKX `books5`、Lighter `order_book` 增量），低延迟；
+* **深度闸门**：REST 深档快照（OKX 400 / Lighter 250，TTL 1.5s 复用），因为闸门需要的是
+  "1% 内有多少钱"，不是"最新一档多少钱"；
+* 两者**代码路径分离**：`OkxVenue.quote()`（WS，5 档）与 `OkxVenue.book()`（REST 400 档）
+  不共用缓存——否则一个 5 档 WS 书会悄悄喂给深度闸门，把 gate 变成噪声。
+
+**不建议只留 WS**：OKX `books` 通道（400 档/100ms）确实能替代 REST，但代价是本地维护
+订单簿（`seqId`/`prevSeqId` 断档重同步）＋ Lighter 侧 `offset`/`begin_nonce` 连续性校验；
+一旦断档没发现，你拿到的是**静默残缺的深度**，比"REST 慢 1 秒"危险得多。当前方案用
+REST 快照把这类风险挡在外面，等你需要 <300ms 的 gate 刷新再上 WS 全量。
+
+**一个必须知道的边角**：档数上限对不同 tick 密度含义完全不同。BTC tick = 0.013 bps，
+400 档只能看到 **5.3 bps**——BTC 的"1% 深度"根本无法从任何一档快照里测出来。所以闸门
+不能直接比 `depth@1%`，应比**每 bp 的名义密度**：
+
+```
+depth_usd_covered(100bp)  -> (usd, covered_bps, complete)
+depth_density_usd_per_bps = usd / min(100, covered_bps)   # 与 tick 密度无关
+gate: depth_density >= min_depth_usd_1pct / 100
+```
+
+BTC 的 400 档只是"5.3bp 视野"，但密度很高 → 通过；薄山寨的 100bp 视野密度很低 → 拒绝。
+`depth_complete` 会一起打印，方便区分"真的没流动性"和"只是档数不够"。
 
 ---
 
@@ -423,8 +473,11 @@ NVDA            6.1b    0.88     -1.4b   14.0b   4.0b  WAIT
 
 ### 7.4 已知限制（必须知道，不要在故障时误判）
 
-* 单次 `snapshot` 对每个标的并发拉（盘口 ×2 + 统计 ×2）；OKX 统计有 5s TTL 缓存，
-  所以 12 标的的单轮真实耗时在秒级，不会撞 OKX 的 20 req/2s 限制。
+* 单次 `snapshot` 对每个标的并发拉深度；OKX 的 mark/index/OI 走**三个全市场批量接口**
+  （`/public/mark-price`、`/public/open-interest`、`/market/index-tickers`）5s TTL，
+  资金费 300s TTL —— 12 标的从 36 次/轮降到 3 次/轮。
+* 深度快照 TTL 1.5s；`quote()`（WS 5 档）与 `book()`（REST 400 档）分开缓存，
+  快路径永远不会污染深度闸门。
 * 成交确认：当前用 **轮询持仓 + 盘口穿越** 判定，未接 Lighter 账户级 WS 推送；
   收益是"实现简单、无鉴权依赖"，代价是最坏一个 `poll_interval` 的确认延迟。
 * 回放不模拟队列位置与逐档吃单，只回答"基差是否够覆盖成本"这一件事。

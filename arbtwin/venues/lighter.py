@@ -35,7 +35,7 @@ from ..models import Book, Fill, MarketSpec, MarketStats, OrderRequest, VenuePos
 from .base import ThreadedWs, VenueAdapter, VenueError, VenueUnavailable, http_json
 
 PERP = "perp"
-DEPTH_LEVELS = 200        # /orderBookOrders accepts up to 250
+DEPTH_LEVELS = 250        # /orderBookOrders max; enough because Lighter books are sparse (~90 levels span 5000bps)
 
 
 def _f(value, default: float = 0.0) -> float:
@@ -89,6 +89,7 @@ class LighterVenue(VenueAdapter):
         self._stats: dict[str, MarketStats] = {}
         self._lock = threading.Lock()
         self._ws: Optional[_LighterWs] = None
+        self.book_ttl_s = 1.5
         self._client = None
         self._client_error: Optional[str] = None
 

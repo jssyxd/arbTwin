@@ -277,3 +277,47 @@ def test_exit_queue_accumulates_same_ticket():
     a = q.add(ExitTicket(symbol="S", venue="okx", side="buy", qty_base=1, remaining=1))
     b = q.add(ExitTicket(symbol="S", venue="okx", side="buy", qty_base=2, remaining=2))
     assert a is b and a.remaining == 3
+
+# --------------------------------------------------------------------------- #
+# depth coverage: a level cap must never masquerade as measured depth
+# --------------------------------------------------------------------------- #
+def _dense_book(tick_bps: float, levels: int, size: float = 10.0) -> Book:
+    return Book("okx", "X",
+                bids=[(100.0 - 100.0 * tick_bps / 1e4 * i, size) for i in range(levels)],
+                asks=[(100.0 + 100.0 * tick_bps / 1e4 * i, size) for i in range(levels)])
+
+
+def test_depth_covered_flags_truncation():
+    dense = _dense_book(0.013, 400)          # BTC-like: reach ~5bps only
+    usd, covered, complete = dense.depth_covered(100.0)
+    assert not complete
+    assert 4.0 <= covered <= 6.0
+    assert usd > 0
+
+    coin = _dense_book(0.29, 400)            # AAPL-like: 400 levels reach ~116bps
+    usd2, covered2, complete2 = coin.depth_covered(100.0)
+    assert complete2 and covered2 == pytest.approx(100.0)
+    # the truncated BTC book can still be *larger* in raw notional (all 400
+    # levels sit inside 5 bps) — which is exactly why raw "1% depth" is not a
+    # comparable number across tick regimes
+    assert usd > 0 and usd2 > 0
+
+
+def test_depth_density_is_scale_free():
+    btc, _, _ = _dense_book(0.013, 400).depth_density_usd_per_bps()
+    aapl, _, _ = _dense_book(0.29, 400).depth_density_usd_per_bps()
+    # a dense tick packs many more levels into each bp, so its notional-per-bp
+    # is larger even though its raw 1%-band notional is truncated
+    assert btc > aapl
+
+
+def test_gate_uses_density_not_truncated_notional():
+    mech = VenueMechanics("okx", min_depth_usd_1pct=50_000, min_move_cost_usd=1.0,
+                          mark_divergence_max_bps=1e6)
+    # BTC-like truncation: raw "1% depth" looks small but density is fine
+    btc = _dense_book(0.013, 400, size=200.0)
+    stats = mk_stats("okx", "BTC", mark=100, index=100, oi_usd=1e3, oi_limit=1e9)
+    v = evaluate_venue(mech, stats, btc)
+    assert v.metrics["depth_complete"] is False
+    assert v.metrics["depth_density_usd_per_bps"] > 500
+    assert v.allow, v.reasons

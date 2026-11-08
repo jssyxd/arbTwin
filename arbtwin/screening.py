@@ -66,6 +66,8 @@ class ScreenRow:
     latency_bps: float = 0.0
     depth_okx_1pct: float = 0.0
     depth_lighter_1pct: float = 0.0
+    depth_okx_density: float = 0.0
+    depth_lighter_density: float = 0.0
     basis_median_bps: float = 0.0
     basis_p95_bps: float = 0.0
     fill_probability: float = 0.0
@@ -185,14 +187,22 @@ def screen_symbols(cfg: AppConfig, okx: OkxVenue, lighter: LighterVenue,
         except Exception as exc:
             row.reject_reasons.append(f"book fetch failed: {exc}")
             continue
-        row.depth_okx_1pct = okx_book.depth_usd(100.0)
-        row.depth_lighter_1pct = lt_book.depth_usd(100.0)
+        row.depth_okx_1pct, cov_okx, comp_okx = okx_book.depth_covered(100.0)
+        row.depth_lighter_1pct, cov_lt, comp_lt = lt_book.depth_covered(100.0)
+        dens_okx, _, _ = okx_book.depth_density_usd_per_bps()
+        dens_lt, _, _ = lt_book.depth_density_usd_per_bps()
+        row.depth_okx_density = dens_okx
+        row.depth_lighter_density = dens_lt
         man_okx = profile(okx_book, symbol, OKX)
         man_lt = profile(lt_book, symbol, LIGHTER)
-        if min(row.depth_okx_1pct, row.depth_lighter_1pct) < min_depth:
+        # compare notional-per-bp inside the covered part of the band: a level
+        # cap truncates dense books (BTC: 400 levels ≈ 5 bps) long before 1%
+        min_density = min_depth / 100.0
+        if min(dens_okx, dens_lt) < min_density:
             row.reject_reasons.append(
-                f"1% depth OKX ${row.depth_okx_1pct:,.0f} / Lighter ${row.depth_lighter_1pct:,.0f} "
-                f"< ${min_depth:,.0f}")
+                f"depth density OKX ${dens_okx:,.0f}/bp ({cov_okx:.0f}bps covered, "
+                f"{'full' if comp_okx else 'truncated'}) / Lighter ${dens_lt:,.0f}/bp "
+                f"({cov_lt:.0f}bps, {'full' if comp_lt else 'truncated'}) < ${min_density:,.0f}/bp")
             continue
         if man_okx.thin_reference and man_lt.thin_reference:
             row.reject_reasons.append("both books fetch a <$25k move inside 25bps")

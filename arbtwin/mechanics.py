@@ -115,11 +115,24 @@ def evaluate_venue(mech: VenueMechanics, stats: MarketStats, book: Book,
     if not (book.bids and book.asks):
         return GateVerdict.blocked(f"{mech.venue}: empty book", venue=mech.venue)
 
-    depth_1pct = book.depth_usd(100.0)
+    # Depth is measured over the band the snapshot actually reaches.  A level
+    # cap (400 okx / 250 lighter) truncates dense books long before 100 bps —
+    # a BTC book reaches ~5 bps in 400 levels — so we gate on notional *per bp*
+    # inside the covered part instead of pretending to know the 1% number.
+    depth_1pct, covered_bps, complete = book.depth_covered(100.0)
+    density, _, _ = book.depth_density_usd_per_bps()
+    min_density = mech.min_depth_usd_1pct / 100.0
     metrics["depth_1pct_usd"] = round(depth_1pct, 2)
-    if depth_1pct < mech.min_depth_usd_1pct:
+    metrics["depth_covered_bps"] = round(covered_bps, 1)
+    metrics["depth_complete"] = complete
+    metrics["depth_density_usd_per_bps"] = round(density, 1)
+    if density < min_density:
         allow = False
-        reasons.append(f"{mech.venue}: 1% depth ${depth_1pct:,.0f} < ${mech.min_depth_usd_1pct:,.0f}")
+        shown = (f"${depth_1pct:,.0f} within {covered_bps:.0f}bps"
+                 if not complete else f"${depth_1pct:,.0f} within 100bps")
+        reasons.append(
+            f"{mech.venue}: depth {shown} = ${density:,.0f}/bp < ${min_density:,.0f}/bp floor"
+        )
 
     div = stats.mark_divergence_bps
     metrics["mark_divergence_bps"] = round(div, 2)
