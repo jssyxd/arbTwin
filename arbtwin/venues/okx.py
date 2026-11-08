@@ -250,10 +250,14 @@ class OkxVenue(VenueAdapter):
                          proxy=self.proxy, timeout=6.0, retries=1)
         if data.get("code") not in ("0", 0, None):
             raise VenueError(f"okx books: {data.get('code')} {data.get('msg')}")
+        # `/market/books` sizes are in CONTRACTS, not base units.  Treating them as
+        # base units inflates depth by 1/ctVal: measured XAU ctVal=0.001 -> 1000x,
+        # BTC 0.01 -> 100x, VVV 0.1 -> 10x.  Convert once, here.
+        ct = spec.contract_multiplier or 1.0
         item = data["data"][0]
         book = Book(self.name, symbol,
-                    bids=[(float(p), float(s)) for p, s, *_ in item["bids"]],
-                    asks=[(float(p), float(s)) for p, s, *_ in item["asks"]],
+                    bids=[(float(p), float(sz) * ct) for p, sz, *_ in item["bids"]],
+                    asks=[(float(p), float(sz) * ct) for p, sz, *_ in item["asks"]],
                     ts=time.time())
         with self._lock:
             self._books[symbol] = book

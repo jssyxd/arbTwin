@@ -60,6 +60,18 @@ class Session:
         minutes = now.hour * 60 + now.minute
         return (self.open_hhmm[0] * 60 + self.open_hhmm[1]) <= minutes < (self.close_hhmm[0] * 60 + self.close_hhmm[1])
 
+    def minutes_to_close(self, ts: float) -> float:
+        """Minutes until the reference market closes (0 when closed)."""
+        if self.kind == "crypto" or not self.is_open(ts):
+            # 24/7 or already closed: there is no "close" to race against.  New
+            # entries are blocked by the gate when closed; forcing an exit into a
+            # dead book would be worse than holding.
+            return float("inf")
+        tz = _tz(self.tz)
+        now = _dt.datetime.fromtimestamp(ts, _dt.timezone.utc).astimezone(tz)
+        close = now.replace(hour=self.close_hhmm[0], minute=self.close_hhmm[1], second=0, microsecond=0)
+        return max(0.0, (close - now).total_seconds() / 60.0)
+
     def minutes_to_open(self, ts: float) -> float:
         if self.is_open(ts):
             return 0.0

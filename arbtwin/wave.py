@@ -74,6 +74,10 @@ class WaveParams:
     # existed in config but was never read; enforce it here.
     max_unhedged_notional_usd: float = 150.0
     adverse_move_stop_bps: float = 60.0
+    # The reopen step is huge (measured 43.8 bps = 65x a typical hourly step), so a
+    # round must not be *started* near the close and must be *left* before it.
+    no_new_entry_min_before_close: float = 60.0
+    force_flat_min_before_close: float = 20.0
 
 
 @dataclass
@@ -217,7 +221,8 @@ def _abort(round_: Round, filled: list[Leg], empty: list[Leg], _unused: float) -
 
 
 def decide(round_: Round, basis_bps: float, okx_book: Book, lt_book: Book,
-           ratio: float, qty_okx: float, passive_net_bps: float) -> list[Intent]:
+           ratio: float, qty_okx: float, passive_net_bps: float,
+           minutes_to_close: float = float("inf")) -> list[Intent]:
     """One poll of the state machine. Pure: no I/O, no clock beyond `time.time()`.
 
     Returns intents; the engine converts them into orders and calls back
@@ -227,6 +232,8 @@ def decide(round_: Round, basis_bps: float, okx_book: Book, lt_book: Book,
     out: list[Intent] = []
 
     if round_.state in (RoundState.FLAT,):
+        if minutes_to_close <= p.no_new_entry_min_before_close:
+            return [Intent("note", reason=f"{minutes_to_close:.0f}min to close — no new round")]
         if abs(basis_bps) < p.entry_bps:
             return [Intent("note", reason=f"|basis| {abs(basis_bps):.1f} < entry {p.entry_bps:.1f}")]
         if passive_net_bps < p.min_edge_bps:
@@ -338,7 +345,8 @@ def decide(round_: Round, basis_bps: float, okx_book: Book, lt_book: Book,
         return out
 
     if round_.state == RoundState.HEDGED:
-        triggered = abs(basis_bps) <= p.exit_bps or round_.hold_h >= p.max_hold_h
+        triggered = (abs(basis_bps) <= p.exit_bps or round_.hold_h >= p.max_hold_h
+                     or minutes_to_close <= p.force_flat_min_before_close)
         adverse = (basis_bps - round_.entry_basis_bps) if round_.direction == "long_okx_short_lighter" \
             else (round_.entry_basis_bps - basis_bps)
         if not triggered and adverse < p.adverse_basis_stop_bps:

@@ -122,10 +122,12 @@ class WaveTrader:
 
     # ------------------------------------------------------------------ stepping
     def step(self, symbol: str, basis_bps: float, okx_book: Book, lt_book: Book,
-             ratio: float, qty_okx: float, passive_net_bps: float) -> dict:
+             ratio: float, qty_okx: float, passive_net_bps: float,
+             minutes_to_close: float = float("inf")) -> dict:
         rnd = self.round_for(symbol)
         before = rnd.state
-        intents = wave.decide(rnd, basis_bps, okx_book, lt_book, ratio, qty_okx, passive_net_bps)
+        intents = wave.decide(rnd, basis_bps, okx_book, lt_book, ratio, qty_okx,
+                              passive_net_bps, minutes_to_close=minutes_to_close)
         executed: list[dict] = []
 
         for intent in intents:

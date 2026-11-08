@@ -712,7 +712,8 @@ class TwinEngine:
                     continue
             qty_okx = notional / max(okx_book.mid, 1e-12) if notional else 0.0
             payload = self.wave.step(row.symbol, row.basis_bps, okx_book, lt_book,
-                                     st.unit_ratio, qty_okx, row.maker_net_bps)
+                                     st.unit_ratio, qty_okx, row.maker_net_bps,
+                                     minutes_to_close=st.session.minutes_to_close(time.time()))
             payload["fills"] = fills
             if payload["executed"] or fills:
                 out.append(payload)

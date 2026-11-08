@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## v0.2.6 — 数据契约透镜：OKX 档位单位、会话标签、收盘窗口（2026-11-08）
+
+- **OKX `/market/books` 的 size 是"张"，不是币**（严重）：`Book` 之前直接当基础币用，
+  深度被放大 `1/ctVal`。实测：XAU `ctVal=0.001` → **1000×**（$23.3B vs 真实 $23.3M），
+  VVV 0.1 → 10×，BTC 0.01 → 100×。已在 `OkxVenue.book()` 统一乘 `ctVal*ctMult`。
+- **陈旧的 session 标签**：`config/symbols.yaml` 里 LIT/VVV/GRAM 仍是 `us_equity`（分类器修过，
+  文件没重生成）→ 每天 16.5 小时只减仓。已按分类器重贴标签（三者 → crypto）。
+- `screening` 的 entry 现在同时写 `basis_p95_rth_bps` / `basis_p50_rth_bps`（此前只在行对象里）。
+- **收盘窗口策略**：新增 `no_new_entry_min_before_close=60` / `force_flat_min_before_close=20`
+  —— 开盘跳空实测 43.8bps（典型步长的 65 倍），不允许在收盘前 1 小时新开一轮，
+  也不允许持仓跨过收盘（20 分钟内强制走向 EXIT）。crypto 与已闭市返回 `inf`（没有"收盘"可争）。
+
 ## v0.2.5 — 策略透镜：基差方向对称性 + 文档命令与宇宙一致（2026-11-08）
 
 - **只有一半行情会被交易（真 bug）**：`wave.decide` 的触发用 `abs(basis)`，但传给它的

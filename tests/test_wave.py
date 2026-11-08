@@ -243,3 +243,21 @@ def test_naked_leg_over_the_notional_budget_aborts_immediately():
     intents = decide(r, 20.0, okx, lt, 1.0, 4.0, 16.0)
     assert r.state is RoundState.ABORT_UNWIND
     assert any("unhedged" in n for n in r.notes)
+
+
+def test_no_new_round_near_the_close_and_leave_before_it():
+    okx, lt = mk_books(lt_offset_bps=40.0)
+    r = mk_round()
+    intents = decide(r, 40.0, okx, lt, 1.0, 4.0, 30.0, minutes_to_close=30.0)
+    assert r.state is RoundState.FLAT and intents[0].kind == "note"
+    assert "to close" in intents[0].reason
+
+    # already hedged -> the close forces an exit even though the basis is wide
+    r2 = mk_round()
+    decide(r2, 40.0, okx, lt, 1.0, 4.0, 30.0)          # open
+    on_fill(r2, "lighter", 4.0, lt.bid)
+    on_fill(r2, "okx", 4.0, okx.ask)
+    assert r2.state is RoundState.HEDGED
+    out = decide(r2, 39.0, okx, lt, 1.0, 4.0, 30.0, minutes_to_close=10.0)
+    assert r2.state in (RoundState.EXIT_QUOTING, RoundState.EXIT_PARTIAL)
+    assert any(i.kind == "quote" and i.order.reduce_only for i in out)

@@ -61,7 +61,7 @@ approved:
   sigma_1h_bps: 155.24
   basis_sigma_bps: 6.36
   band_bps: 12.73
-  session: us_equity
+  session: crypto
   preferred_mode: dual_maker
   notes:
     ratio_cv_pct: 0.0636
@@ -100,7 +100,7 @@ approved:
   sigma_1h_bps: 125.14
   basis_sigma_bps: 5.99
   band_bps: 11.98
-  session: us_equity
+  session: crypto
   preferred_mode: dual_maker
   notes:
     ratio_cv_pct: 0.0599
@@ -126,7 +126,7 @@ approved:
   sigma_1h_bps: 56.82
   basis_sigma_bps: 7.49
   band_bps: 14.97
-  session: us_equity
+  session: crypto
   preferred_mode: dual_maker
   notes:
     ratio_cv_pct: 0.0749
