@@ -28,6 +28,17 @@
 | `state/reports/hourly.log` | 每小时报告正文（与 Telegram 同步） |
 | `state/deviations.jsonl` | **所有 bug / 不符合预期的记录** |
 
+## 2.1 实际安装状态（2026-11-08 23:4x +08 核实）
+
+| 项 | 状态 |
+|---|---|
+| Hermes | 源码安装完成，`/root/.local/bin/hermes`，`hermes -z "Reply with exactly: pong"` → `pong` |
+| Provider 验证 | `alibaba-token-plan-cn` + `base_url .../compatible-mode/v1` + `deepseek-v4.1-flash-1017`（直连 curl 200，Hermes 调用 200） |
+| Telegram 出站 | `hermes send --to telegram ...` → `Sent to telegram home channel (chat_id: 974319640)` |
+| Telegram 网关 | `hermes-gateway.service`（systemd，**enabled**，PID 40343，run-as-user root，LXC 许可）→ 可接收消息 |
+| 常驻内存 | Hermes gateway ≈ 200MB；arbTwin ≈ 280MB；整机 476/960MB，swap 20MB |
+| 定时任务 | `arbtwin-hourly-report.timer`（每小时准点）+ `arbtwin-monitor3h.timer`（每 3h）+ Hermes cron `arbtwin-daily-research`（每天 09:00，id `0cbbe02e6043`） |
+
 ## 3. 已交付的监控程序
 
 | 程序 | 频率 | 作用 |
