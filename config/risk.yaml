@@ -4,6 +4,11 @@
 # Everything in `limits` is a veto, not a suggestion.  Anything in `registry`
 # is a human judgement recorded in version control so it can be reviewed.
 # ---------------------------------------------------------------------------
+# maker_basis = legacy two-mode engine; wave = one round at a time, limit-only,
+# entry at p95 of the 14d basis, exit at p50, both legs must be flat before the
+# next round (see arbtwin/wave.py and docs/DEPLOYMENT.zh.md).
+strategy: wave
+
 limits:
   max_margin_usage_pct: 0.35        # per venue, of that venue's own equity
   max_notional_usd: 3000.0          # per symbol across both legs

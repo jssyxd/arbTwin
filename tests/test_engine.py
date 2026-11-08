@@ -248,3 +248,112 @@ def test_band_override_is_honoured():
     engine.load_universe()
     row = engine.snapshot()["rows"][0]
     assert row.entry_band_bps == pytest.approx(12.0)
+
+
+# --------------------------------------------------------------------------- #
+# wave mode: one round at a time, both legs to flat
+# --------------------------------------------------------------------------- #
+def mk_wave_cfg() -> AppConfig:
+    cfg = mk_cfg()
+    cfg.strategy = "wave"
+    cfg.symbols = [{
+        "symbol": "AAPL", "unit_ratio": 1.0, "sigma_1h_bps": 40.0, "basis_sigma_bps": 6.0,
+        "session": "crypto", "entry_bps_p95": 14.0, "exit_bps_p50": 4.5,
+    }]
+    return cfg
+
+
+def _wave_step(engine):
+    """One engine poll: re-price the matrix, then step the round."""
+    return engine.wave_step(engine.snapshot())
+
+
+def test_wave_round_runs_flat_to_flat_without_overlap():
+    okx = FakeVenue("okx", 100.0, 100.05, size=500.0, maker=2.0, taker=5.0)
+    lt = FakeVenue("lighter", 101.40, 101.45, size=500.0)      # ~140 bps rich
+    engine = TwinEngine(mk_wave_cfg(), okx, lt)
+    engine.load_universe()
+    assert engine.wave is not None
+
+    _wave_step(engine)
+    rnd = engine.wave.round_for("AAPL")
+    assert rnd.state.value == "entry_quoting"
+    quoted = {q.venue: q for q in engine.wave.open_quotes("AAPL")}
+    assert set(quoted) == {"okx", "lighter"}
+    assert quoted["lighter"].side == "sell" and quoted["okx"].side == "buy"
+
+    # only the Lighter leg fills: the market must trade *through* our sell
+    sell_px = quoted["lighter"].px
+    lt._bid, lt._ask = sell_px + 0.05, sell_px + 0.10
+    _wave_step(engine)
+    assert rnd.state.value == "entry_partial"
+    still = {q.venue: q for q in engine.wave.open_quotes("AAPL")}
+    assert "okx" in still and "lighter" not in still
+
+    # OKX leg fills (ask trades below our bid) -> hedged
+    buy_px = still["okx"].px
+    okx._bid, okx._ask = buy_px - 0.10, buy_px - 0.05
+    _wave_step(engine)
+    assert rnd.state.value == "hedged"
+
+    # basis converges to ~3 bps -> exit quotes, reduce_only, frozen prices
+    okx._bid, okx._ask = 100.30, 100.32
+    lt._bid, lt._ask = 100.33, 100.35
+    _wave_step(engine)
+    assert rnd.state.value in ("exit_quoting", "exit_partial"), rnd.state
+    exits = engine.wave.open_quotes("AAPL")
+    assert exits and all(q.reduce_only for q in exits)
+    frozen = dict(rnd.frozen)
+
+    # both exits trade through their frozen prices -> round complete
+    lt._bid, lt._ask = frozen["lighter"] - 0.10, frozen["lighter"] - 0.05
+    okx._bid, okx._ask = frozen["okx"] + 0.05, frozen["okx"] + 0.10
+    _wave_step(engine)
+    assert rnd.state.value == "flat"
+    assert engine.wave.open_quotes("AAPL") == []
+
+
+def test_wave_does_not_open_a_second_round_while_closing():
+    okx = FakeVenue("okx", 100.0, 100.05, size=500.0, maker=2.0, taker=5.0)
+    lt = FakeVenue("lighter", 101.40, 101.45, size=500.0)
+    engine = TwinEngine(mk_wave_cfg(), okx, lt)
+    engine.load_universe()
+    _wave_step(engine)
+    rnd = engine.wave.round_for("AAPL")
+
+    sell_px = {q.venue: q.px for q in engine.wave.open_quotes("AAPL")}["lighter"]
+    lt._bid, lt._ask = sell_px + 0.05, sell_px + 0.10
+    _wave_step(engine)
+    buy_px = {q.venue: q.px for q in engine.wave.open_quotes("AAPL")}["okx"]
+    okx._bid, okx._ask = buy_px - 0.10, buy_px - 0.05
+    _wave_step(engine)
+    assert rnd.state.value == "hedged"
+
+    before = rnd.round_id
+    # basis dislocates wider again while still hedged: no new round may start
+    lt._bid, lt._ask = 102.90, 102.95
+    okx._bid, okx._ask = 101.00, 101.02
+    _wave_step(engine)
+    assert rnd.round_id == before
+    assert rnd.state.value in ("hedged", "exit_quoting", "exit_partial")
+def test_wave_does_not_open_a_second_round_while_closing():
+    okx = FakeVenue("okx", 100.0, 100.05, size=500.0, maker=2.0, taker=5.0)
+    lt = FakeVenue("lighter", 101.40, 101.45, size=500.0)
+    engine = TwinEngine(mk_wave_cfg(), okx, lt)
+    engine.load_universe()
+    snap = engine.snapshot()
+    engine.wave_step(snap)
+    sell_px = {q.venue: q.px for q in engine.wave.open_quotes("AAPL")}["lighter"]
+    lt._bid, lt._ask = sell_px + 0.05, sell_px + 0.10
+    engine.wave_step(snap)
+    buy_px = {q.venue: q.px for q in engine.wave.open_quotes("AAPL")}["okx"]
+    okx._bid, okx._ask = buy_px - 0.10, buy_px - 0.05
+    engine.wave_step(snap)
+    rnd = engine.wave.round_for("AAPL")
+    assert rnd.state.value == "hedged"
+    before = rnd.round_id
+    # basis dislocates wider while still hedged -> exit, not a new entry round
+    lt._bid, lt._ask = 101.90, 101.95
+    engine.wave_step(snap)
+    assert rnd.round_id == before
+    assert rnd.state.value in ("exit_quoting", "exit_partial", "hedged")

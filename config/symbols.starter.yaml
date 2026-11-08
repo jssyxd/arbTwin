@@ -1,7 +1,7 @@
 generated_at: '2026-11-08T16:20:00Z'
 note: 'v1 starter universe (widest 14d basis + deepest book). Regenerate: arbtwin
   screen --only SOXL,GRAM,VVV. MSTR deliberately excluded: MSCI index decision 2026-11-11
-  (event risk).'
+  (event risk). Wave 模式下 entry_bps_p95 / exit_bps_p50 就是“入场/出场”的唯一阈值（14 天实测分位），引擎只按这两个数挂单。'
 universe:
   candidates: 12
   approved: 3
@@ -26,6 +26,11 @@ approved:
     basis14d_pct_hours_ge_12bps: 0.045
     halflife_h: 0.76
   band_override_bps: 12.7
+  entry_bps_p95: 10.8
+  exit_bps_p50: 3.7
+  entry_deadline_s: 5400
+  exit_deadline_s: 3600
+  max_hold_h: 4.0
 - symbol: VVV
   unit_ratio: 1.00028217
   sigma_1h_bps: 125.14
@@ -45,6 +50,11 @@ approved:
     basis14d_pct_hours_ge_12bps: 0.045
     halflife_h: 1.7
   band_override_bps: 12.0
+  entry_bps_p95: 11.4
+  exit_bps_p50: 3.5
+  entry_deadline_s: 5400
+  exit_deadline_s: 3600
+  max_hold_h: 4.0
 - symbol: GRAM
   unit_ratio: 1.00110561
   sigma_1h_bps: 56.82
@@ -64,4 +74,9 @@ approved:
     basis14d_pct_hours_ge_12bps: 0.092
     halflife_h: 0.9
   band_override_bps: 14.8
+  entry_bps_p95: 15.6
+  exit_bps_p50: 4.6
+  entry_deadline_s: 5400
+  exit_deadline_s: 3600
+  max_hold_h: 4.0
 rejected: []

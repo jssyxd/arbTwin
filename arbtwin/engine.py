@@ -43,6 +43,8 @@ from .mechanics import MechanicsBook, build_mechanics, evaluate_venue, latency_c
 from .models import (LIGHTER, OKX, Book, ExecutionPlan, Fill, GateVerdict, MarketSpec,
                      MarketStats, OrderRequest, SpreadRow, VenuePosition)
 from .spread import build_plan, compute_row, summarise
+from .wave import RoundState, WaveParams
+from .wavetrader import WaveTrader
 from .venues.lighter import LighterVenue
 from .venues.okx import OkxVenue
 
@@ -69,6 +71,7 @@ class SymbolState:
     cooldown_until: float = 0.0
     last_gate: Optional[GateVerdict] = None
     last_row: Optional[SpreadRow] = None
+    wave_params: Optional[WaveParams] = None
 
 
 @dataclass
@@ -147,6 +150,7 @@ class TwinEngine:
         self.states: dict[str, SymbolState] = {}
         self.exits = ExitQueue()
         self.maker_quotes: list[MakerQuote] = []
+        self.wave: Optional[WaveTrader] = None
         self.trades: list[dict] = []
         self.alerts: list[dict] = []
         self._loaded = False
@@ -172,10 +176,24 @@ class TwinEngine:
                 sigma_1h_bps=float(entry.get("sigma_1h_bps") or 0.0),
                 basis_sigma_bps=float(entry.get("basis_sigma_bps") or 0.0),
                 band_override_bps=float(entry.get("band_override_bps") or 0.0),
+                wave_params=WaveParams(
+                    entry_bps=float(entry.get("entry_bps_p95") or entry.get("band_override_bps") or 14.0),
+                    exit_bps=float(entry.get("exit_bps_p50") or 4.5),
+                    max_hold_h=float(entry.get("max_hold_h") or self.cfg.limits.max_hold_h),
+                    entry_deadline_s=float(entry.get("entry_deadline_s") or 5400.0),
+                    exit_deadline_s=float(entry.get("exit_deadline_s") or 3600.0),
+                ) if str(entry.get("entry_bps_p95") or entry.get("band_override_bps")) else None,
                 spec_okx=okx_specs[symbol],
                 spec_lighter=lighter_specs[symbol],
                 session=session,
             )
+        if self.cfg.strategy == "wave":
+            params = {s: st.wave_params for s, st in self.states.items() if st.wave_params}
+            if params:
+                self.wave = WaveTrader(params, place=self._wave_place, cancel=self._wave_cancel,
+                                       persist=lambda rec: write_state(f"{self.cfg.state_dir}/rounds.jsonl", rec))
+                for symbol in params:
+                    self.states[symbol].band_override_bps = params[symbol].entry_bps
         self._loaded = True
         return self.states
 
@@ -548,6 +566,71 @@ class TwinEngine:
         self._persist_trade(trade)
         self._alert("info", symbol, "dual-maker both legs filled — position opened")
 
+    # ------------------------------------------------------------------ wave mode
+    def _wave_place(self, order: OrderRequest) -> Fill:
+        st = self.states.get(order.symbol)
+        if st is None:
+            raise VenueError(f"unknown symbol {order.symbol}")
+        spec = st.spec_lighter if order.venue == LIGHTER else st.spec_okx
+        if self.cfg.dry_run:
+            fee = spec.maker_fee_bps if order.tif == "post_only" else spec.taker_fee_bps
+            return Fill(order.venue, order.symbol, order.side, order.qty_base, order.px,
+                        fee_bps=fee, order_id=f"dry-{int(time.time() * 1000) % 100000}")
+        return self.broker.place(order, spec)
+
+    def _wave_cancel(self, symbol: str, venue: str, order_id: str) -> bool:
+        if self.cfg.dry_run or not order_id:
+            return True
+        try:
+            target = self.lighter if venue == LIGHTER else self.okx
+            return bool(target.cancel(symbol, order_id))
+        except Exception:
+            return False
+
+    def _target_notional(self, symbol: str) -> float:
+        st = self.states[symbol]
+        limits = self.cfg.limits
+        okx_eq, lt_eq = self.broker.equities()
+        if okx_eq <= 0 or lt_eq <= 0:
+            return 0.0
+        okx_book = self.okx.book(symbol)
+        lt_book = self.lighter.book(symbol)
+        size_factor = st.last_gate.metrics.get("size_factor", 1.0) if st.last_gate else 1.0
+        a = max_position_usd(okx_eq, st.spec_okx.max_leverage, limits.max_margin_usage_pct,
+                            okx_book.depth_usd(100.0), hard_cap_usd=limits.max_notional_usd)
+        b = max_position_usd(lt_eq, st.spec_lighter.max_leverage, limits.max_margin_usage_pct,
+                            lt_book.depth_usd(100.0), hard_cap_usd=limits.max_notional_usd)
+        return max(0.0, min(a, b) * size_factor)
+
+    def wave_step(self, snap: dict) -> list[dict]:
+        """One poll of the round state machine for every symbol in the universe."""
+        if self.wave is None:
+            return []
+        out: list[dict] = []
+        for row in snap["rows"]:
+            st = self.states.get(row.symbol)
+            if st is None or st.wave_params is None or not self.wave.params.get(row.symbol):
+                continue
+            if not st.last_gate or not st.last_gate.allow:
+                continue
+            try:
+                okx_book = self.okx.book(row.symbol)
+                lt_book = self.lighter.book(row.symbol)
+            except Exception as exc:
+                self._alert("warn", row.symbol, f"wave: book unavailable: {exc}")
+                continue
+            fills = self.wave.poll_fills(row.symbol, okx_book, lt_book)
+            notional = self._target_notional(row.symbol)
+            if notional < 25.0:
+                continue
+            qty_okx = notional / max(okx_book.mid, 1e-12)
+            payload = self.wave.step(row.symbol, row.basis_bps, okx_book, lt_book,
+                                     st.unit_ratio, qty_okx, row.maker_net_bps)
+            payload["fills"] = fills
+            if payload["executed"] or fills:
+                out.append(payload)
+        return out
+
     # ------------------------------------------------------------------ risk loop
     def manage_risk(self, snap: dict) -> list[dict]:
         actions: list[dict] = []
@@ -652,8 +735,12 @@ class TwinEngine:
     # ------------------------------------------------------------------ loop
     def run_once(self) -> dict:
         snap = self.snapshot()
-        executed = self.execute_best(snap)
-        risk_actions = self.manage_risk(snap)
+        if self.cfg.strategy == "wave":
+            executed = self.wave_step(snap)
+            risk_actions = []
+        else:
+            executed = self.execute_best(snap)
+            risk_actions = self.manage_risk(snap)
         payload = {
             "ts": snap["ts"],
             "symbols": [

@@ -148,6 +148,9 @@ class AppConfig:
     symbols: list[dict] = field(default_factory=list)
     risk: dict = field(default_factory=dict)
     state_dir: str = "state"
+    # "maker_basis" = the original two-mode engine; "wave" = one-round-at-a-time
+    # state machine (arbtwin/wave.py) that never takes liquidity except on a stop.
+    strategy: str = "maker_basis"
     dry_run: bool = True
     alert_webhook: str = ""
     poll_interval_ms: int = 250
@@ -169,6 +172,7 @@ class AppConfig:
                 setattr(band, key, value)
 
         cfg = cls(
+            strategy=str(risk.get("strategy") or "maker_basis"),
             okx=OkxCredentials.from_env(),
             lighter=LighterCredentials.from_env(),
             limits=limits,
