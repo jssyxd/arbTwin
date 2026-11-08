@@ -26,6 +26,20 @@
 | OKX passphrase | 已收到（仅写入主机 `/opt/arbtwin/.env`，640，不入仓库） | 用户提供 |
 | OKX 访问 | **50110：IP 白名单只含 155.254.60.38 / 23.27.186.126**；本机出口 95.40.146.30 被拒 → 一切 OKX 私有读取必须在 VPS 上执行 | `GET /api/v5/account/balance` |
 
+## 1.2 2026-11-08 22:1x 实机核实（从白名单 IP、强制 IPv4）
+
+| 项 | 实测 | 备注 |
+|---|---|---|
+| OKX `totalEq` | **31.4379 USDT**（USDT eq/avail 31.4794） | `/api/v5/account/balance` |
+| OKX 费率 | **Lv1：maker −0.0002 / taker −0.0005** | OKX 的负号=支出 ⇒ maker **2 bps**、taker **5 bps**，与 `config/venues.yaml` 一致 |
+| OKX 持仓 | 0 | — |
+| Lighter 权益 | **27.629041 USDC** | `equity_usd()`（账户级字段，非 `assets[].balance`） |
+| Lighter 持仓 | 0 | — |
+| Lighter key 4 / 5 | 均已加载（maker / taker 分流） | `lighter-sdk 1.0.0` |
+| **合计资金** | **≈ $59.1** | 31.48（OKX）+ 27.63（Lighter） |
+| Lighter 杠杆 | **0x**（截图） | 开仓前需设 3x，否则保证金口径不符 |
+| 双栈坑 | 首次调用报 `50110 ... 2400:8d60:5::1:5774:50ed not in whitelist` | 白名单只有 IPv4；已加 `ARBTWIN_FORCE_IPV4=1`（默认开），强制 IPv4 解析 |
+
 ## 2. 当前不能进实盘的硬阻塞（更新）
 
 | # | 阻塞 | 证据 | 解除方式 |
