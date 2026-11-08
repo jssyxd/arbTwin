@@ -852,6 +852,12 @@ class TwinEngine:
                     "basis_bps": round(r.basis_bps, 2), "net_bps": round(r.net_edge_bps, 2),
                     "band_bps": round(r.entry_band_bps, 2), "fee_bps": round(r.fee_bps, 2),
                     "latency_bps": round(r.latency_cost_bps, 2),
+                    # spread tape: both venues' own quoted spreads, so the
+                    # "average spread by session" question can be answered from
+                    # our own recordings (no venue publishes spread history)
+                    "okx_spread_bps": round(getattr(r, "okx_spread_bps", 0.0), 2),
+                    "lt_spread_bps": round(getattr(r, "lt_spread_bps", 0.0), 2),
+                    "spread_cost_bps": round(getattr(r, "spread_cost_bps", 0.0), 2),
                     "reasons": r.reasons[:3],
                 }
                 for r in snap["rows"]
