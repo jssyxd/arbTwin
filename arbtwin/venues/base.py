@@ -7,6 +7,7 @@ fetch a JSON book is a trading adapter you cannot run on a $5 VPS at 3 a.m.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import urllib.error
@@ -27,6 +28,34 @@ class VenueUnavailable(VenueError):
 
 
 DEFAULT_UA = "arbtwin/0.1 (+https://github.com/jssyxd/arbTwin)"
+
+
+def _prefer_ipv4() -> None:
+    """Resolve IPv4 first.
+
+    Venue API allowlists are IPv4 in practice (OKX: 155.254.60.38).  A dual-stack
+    host otherwise egresses over IPv6 and every private call fails with 50110
+    "Your IP 2400:... is not included in your API key's IP whitelist" -- observed
+    on the trading VPS.  IPv6-only hosts still work because we only reorder.
+    """
+    if os.environ.get("ARBTWIN_FORCE_IPV4", "1") != "1":
+        return
+    import socket as _socket
+
+    if getattr(_socket.getaddrinfo, "_arbtwin_ipv4", False):
+        return
+    original = _socket.getaddrinfo
+
+    def prefer(host, port, family=0, type=0, proto=0, flags=0):
+        results = original(host, port, family, type, proto, flags)
+        v4 = [r for r in results if r[0] == _socket.AF_INET]
+        return v4 or results
+
+    prefer._arbtwin_ipv4 = True  # type: ignore[attr-defined]
+    _socket.getaddrinfo = prefer  # type: ignore[assignment]
+
+
+_prefer_ipv4()
 
 
 def http_json(
