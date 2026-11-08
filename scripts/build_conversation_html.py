@@ -261,7 +261,7 @@ rejected 163 ← 三类：基差 p95 不覆盖成本 / 移动25bps<$50k / 比值
         ("Lighter REST vs WS 深度", "AAPL $1,116,770 vs $1,116,714（ratio 1.00）；NVDA $1,317,264 vs $1,317,264 —— Lighter 书稀疏，REST 已够"),
         ("Lighter SDK API 核对", "读 `lighter/signer_client.py` v1.1.8：`create_order` 异步、`ORDER_TIME_IN_FORCE_POST_ONLY=2`、`cancel_order(market_index, order_index)`、`cancel_all_orders(tif, ts, market_index)`"),
         ("全量 screen", "175 候选 / 831 秒 → 12 approved，163 rejected 带原因"),
-        ("构建与验证", "55 个单测；`pip install -e .` 于干净 venv 通过；三次 commit + push（token 仅用于 push，远端 URL 已还原）"),
+        ("构建与验证", "57 个单测；`pip install -e .` 于干净 venv 通过；三次 commit + push（token 仅用于 push，远端 URL 已还原）"),
     ],
 })
 
@@ -625,7 +625,7 @@ def build() -> str:
 <div class="sub">
 仓库 <a href="https://github.com/jssyxd/arbTwin">jssyxd/arbTwin</a> ·
 2026-11-08 ·
-四轮对话完整记录 · 21 条推文原文 · 全部实测数据 · 55 个单测
+四轮对话完整记录 · 21 条推文原文 · 全部实测数据 · 57 个单测
 </div>
 <div style="margin-top:14px"><input id="q" placeholder="全文检索（标题 / 表 / 记录都会过滤）…"></div>
 </header>

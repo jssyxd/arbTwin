@@ -52,7 +52,7 @@ Lighter 权益/加密永续的资金费**长期为正**（14 天里 99–100% �
 | **单位被重新定义** | 两所同一 ticker 的比值突然变化（实测反例：ANTHROPIC 比值 10.4、CV 4.07%、相关 0.80） | `calibration.py`：CV ≤ 0.5%、收益率相关 ≥ 0.99，否则整只标的剔除；`screening` 每次重扫都重算；`band_override` 只允许在已校准前提下设定 |
 | **venue 规则变更** | 费率改了、mark 口径改了、资金费参数改了、变成 reduce-only | 启动时快照 `orderBookDetails`/`instruments`；`fees.py` 用实时费率而不是常量；`monitor` 的 `reject_rate > 20%` 告警；每天 `doctor` 复核 |
 | **单边流动性枯竭** | 一边盘口变薄，maker 单被吃穿 | `mechanics.py`：1% 深度密度 ≥ `min_depth_usd_1pct/100`；`move25bps_cost` ≥ $50k；单笔名义 ≤ 深度 10% |
-| **预言机 / mark 机制异常** | mark 与 index 长期偏离，或贴近 venue 的 mark 上限 | `mechanics.py`：`mark_divergence_max_bps`（OKX 30 / Lighter 40）；`mark_cap_px`/`mark_floor_px` 距离 < 8% 禁止该方向；`anchor.py`：两所 index 分歧 > 45 bps 直接拒绝定价 |
+| **预言机 / mark 机制异常** | mark 与 index 长期偏离，或贴近 venue 的 mark 上限 | `mechanics.py`：`mark_divergence_max_bps`（OKX 80 / Lighter 100；原值 30/40 会把健康的 3x ETF 判死 —— 实测 SOXL 在两所都有 60–70bps 的 mark-index 差：OKX 的 mark 跟期货、index 跟 ETF 净值；Lighter 的 mark 用 impact price，本身带溢价参数）；`mark_cap_px`/`mark_floor_px` 距离 < 8% 禁止该方向；`anchor.py`：两所 index 分歧 > 45 bps 直接拒绝定价 |
 | **稳定币脱锚（USDC/USDT）** | 两腿权益计价不同步，PnL 出现非交易性波动 | 结构性防线：**两所各自独立保证金、各留缓冲**（见 3.2 资金分配）；`settlement_cost_bps` 计入摩擦；不因稳定币价格加杠杆 |
 | **极端行情两所不同步（跳空/插针）** | 一边先跳，另一边还没跳；或一边被强平 | `engine.manage_risk`：单腿漂移 12% 强制双平；`reconcile`：一条腿归零立即平掉孤儿仓；`exitqueue`：18% 强平距离触发被动减仓 |
 | **强制平仓级联** | venue 的 OI 相对盘口过大，一根针扫掉一片仓位 | `mechanics`：OI 利用率 ≤ 25%（Lighter 有公开 OI 上限）；`cascade_proxy` 作为监控指标；杠杆上限 3x、强平距离先算后下 |
@@ -133,6 +133,9 @@ Lighter 权益/加密永续的资金费**长期为正**（14 天里 99–100% �
 | 未成交撤单 | 120 s | 120 s | 120 s |
 | 同一时刻每标的挂单 | 1 买 + 1 卖（两所各一） | 同 | 同 |
 
+> 最终生效的带宽 = `band_override_bps × 薄盘口惩罚系数`（P2-7，最高 4×）。也就是说薄盘口
+> 仍会强制放宽，override 只保证"下限可预期"。
+>
 > `band_override_bps` 由 `max(12, 2σ)` 得出并写在 `config/symbols.starter.yaml` 里，
 > 引擎读该字段（`SymbolState.band_override_bps`），不再用实时 σ 重算 —— 保证上线首日
 > 阈值稳定、可预期。
@@ -297,10 +300,21 @@ sudo journalctl -u arbtwin -f
 | `net_bps` | 持仓时为正 | 持仓时 < 0 且持续 30 分钟 | 这笔在付钱持有；考虑提前按"逆向 25bps"规则退出 |
 | `depth_density_usd_per_bps` | > 200 | < 200 | 盘口变薄；降低名义或停该标的 |
 | `depth_complete` | true | false 且密度下降 | 档数不够（多见于 BTC 这类密 tick）；看密度，不看绝对深度 |
-| `move_25bps_cost_usd` | > $50k | < $50k | 一根针能扫掉你；停该标的 |
+| `move_25bps_cost_usd` | > $40k | < $40k | 一根针能扫掉你；停该标的 |
 | `oi_utilization` | < 10% | > 25% | venue 结构性拥挤；不加仓 |
 | `ws_age_s` | < 5 s | > 30 s | 行情陈旧；引擎会自动停开仓 |
 | `reject_rate` | 0 | > 20%（近 50 单） | venue 改了规则/权限/最小下单量；立刻人工介入 |
+
+`arbtwin monitor` 的输出里有两列费用，别混：
+
+```
+symbol        basis      z    hedge    maker    band  h_fee  m_fee  action
+SOXL          -3.8b   0.00   -18.9b    -8.6b   12.7b  10.0b   4.0b    WAIT
+```
+
+* `hedge` = `hedge_now` 模式的净额（含 10 bps 往返费用），**v1 不交易这一列**；
+* `maker` = `dual_maker` 模式的净额（含 4 bps 往返费用），**v1 只看这一列**；
+* `basis` 是看到的基差，`band` 是触发阈值（本行 12.7 = `band_override_bps`）。
 
 ### 5.2 每天 5 分钟 checklist
 

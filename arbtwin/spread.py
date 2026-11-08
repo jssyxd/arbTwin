@@ -83,13 +83,16 @@ def compute_row(
     band = entry_band_bps(sigma_basis_bps if sigma_basis_bps is not None else sigma_1h_bps,
                           fee_bps, band_params)
     if band_override_bps > 0:
+        # override is a GROSS basis trigger (what the operator sees on the matrix),
+        # not a net-edge threshold: "enter when |basis| >= 12.7bps and net > 0"
         band = band_override_bps
     net = exec_edge_bps - fee_bps - lat_bps - slippage_bps - funding_cost_bps
 
     # passive alternative: quote both venues post-only.  No taker fee, no
     # latency drift, no slippage — the price of that is one-sided-fill risk, so
     # it needs its own (wider, sigma-scaled) band.
-    maker_fee = fees.round_trip_bps(lead_venue, hedge_venue, "post_only", "post_only")
+    maker_fee = fees.round_trip_bps(lead_venue, hedge_venue, "post_only", "post_only",
+                                    close_type="post_only")
     maker_net = basis - maker_fee - funding_cost_bps
     maker_band = entry_band_bps(sigma_basis_bps if sigma_basis_bps is not None else sigma_1h_bps,
                                 maker_fee, band_params)
@@ -105,7 +108,22 @@ def compute_row(
         maker_fee_bps=maker_fee, maker_net_bps=maker_net, maker_band_bps=maker_band,
         direction=direction,
     )
-    if net >= band:
+    gross_triggered = abs(basis) >= band if band_override_bps > 0 else False
+    if band_override_bps > 0:
+        if gross_triggered and net > 0.5:
+            row.action = "ENTER"
+            row.reasons.append(f"|basis| {abs(basis):.1f}bps >= trigger {band:.1f}bps, "
+                               f"hedge-now net {net:.1f}bps")
+        elif gross_triggered and maker_net > 0.5:
+            row.action = "MAKER"
+            row.reasons.append(f"|basis| {abs(basis):.1f}bps >= trigger {band:.1f}bps, "
+                               f"maker net {maker_net:.1f}bps")
+        else:
+            row.action = "WAIT"
+            row.reasons.append(
+                f"|basis| {abs(basis):.1f}bps vs trigger {band:.1f}bps "
+                f"(hedge {net:+.1f} / maker {maker_net:+.1f} bps)")
+    elif net >= band:
         row.action = "ENTER"
         row.reasons.append(f"hedge-now net {net:.1f}bps >= band {band:.1f}bps")
     elif maker_net >= maker_band:

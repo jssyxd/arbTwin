@@ -246,8 +246,8 @@ class TwinEngine:
             if merged.level == "ok":
                 merged.level = "warn"
 
-        man_okx = profile(okx_book, st.symbol, OKX, min_cost_usd=float(self.cfg.risk.get("min_manip_cost_usd", 25_000)))
-        man_lt = profile(lt_book, st.symbol, LIGHTER, min_cost_usd=float(self.cfg.risk.get("min_manip_cost_usd", 25_000)))
+        man_okx = profile(okx_book, st.symbol, OKX, min_cost_usd=self.mech.get(OKX).min_move_cost_usd)
+        man_lt = profile(lt_book, st.symbol, LIGHTER, min_cost_usd=self.mech.get(LIGHTER).min_move_cost_usd)
         merged.metrics["band_multiplier"] = round(max(man_okx.band_multiplier, man_lt.band_multiplier), 2)
         merged.metrics["latency_multiplier"] = round(max(man_okx.latency_multiplier, man_lt.latency_multiplier), 2)
         if man_okx.thin_reference or man_lt.thin_reference:

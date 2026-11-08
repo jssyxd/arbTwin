@@ -77,7 +77,8 @@ class FeeBook:
         raise KeyError(venue)
 
     def round_trip_bps(self, lead_venue: str, hedge_venue: str,
-                       lead_type: str = "post_only", hedge_type: str = "ioc") -> float:
+                       lead_type: str = "post_only", hedge_type: str = "ioc",
+                       close_type: str | None = None) -> float:
         """Cost of opening (lead + hedge) and later closing both legs.
 
         Closing is modelled symmetrically: the leg that entered as a maker exits
@@ -87,8 +88,13 @@ class FeeBook:
         lead = self.by_venue(lead_venue)
         hedge = self.by_venue(hedge_venue)
         open_cost = lead.effective_bps(lead_type) + hedge.effective_bps(hedge_type)
-        close_cost = max(lead.effective_bps("ioc"), lead.effective_bps("post_only")) \
-            + max(hedge.effective_bps("ioc"), hedge.effective_bps("post_only"))
+        if close_type is None:
+            # hedge_now: the exit may have to be taken -> charge the worse of the two
+            close_cost = max(lead.effective_bps("ioc"), lead.effective_bps("post_only")) \
+                + max(hedge.effective_bps("ioc"), hedge.effective_bps("post_only"))
+        else:
+            # dual_maker: exits leave through the passive queue
+            close_cost = lead.effective_bps(close_type) + hedge.effective_bps(close_type)
         settlement = lead.settlement_cost_bps + hedge.settlement_cost_bps
         return open_cost + close_cost + settlement
 

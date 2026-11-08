@@ -99,8 +99,10 @@ class Monitor:
                 "basis_z": None if z is None else round(z, 2),
                 "basis_pctile": None if hist.p(row.basis_bps) is None else round(hist.p(row.basis_bps), 3),
                 "net_bps": round(row.net_edge_bps, 2),
+                "maker_net_bps": round(row.maker_net_bps, 2),
                 "band_bps": round(row.entry_band_bps, 2),
                 "fee_bps": round(row.fee_bps, 2),
+                "maker_fee_bps": round(row.maker_fee_bps, 2),
                 "latency_bps": round(row.latency_cost_bps, 2),
                 "action": row.action,
                 "direction": row.direction,
@@ -154,12 +156,15 @@ class Monitor:
             pass
 
     def render(self, payload: dict) -> str:
-        head = f"{'symbol':<10s} {'basis':>9s} {'z':>6s} {'net':>8s} {'band':>7s} {'fee':>6s} {'action':>7s}"
+        head = (f"{'symbol':<10s} {'basis':>9s} {'z':>6s} {'hedge':>8s} {'maker':>8s} "
+                f"{'band':>7s} {'h_fee':>6s} {'m_fee':>6s} {'action':>7s}")
         lines = [head, "-" * len(head)]
         for r in payload["rows"]:
             lines.append(
                 f"{r['symbol']:<10s} {r['basis_bps']:>8.1f}b {(r['basis_z'] if r['basis_z'] is not None else 0):>6.2f} "
-                f"{r['net_bps']:>7.1f}b {r['band_bps']:>6.1f}b {r['fee_bps']:>5.1f}b {r['action']:>7s}"
+                f"{r['net_bps']:>7.1f}b {r.get('maker_net_bps', 0.0):>7.1f}b "
+                f"{r['band_bps']:>6.1f}b {r['fee_bps']:>5.1f}b "
+                f"{r.get('maker_fee_bps', 0.0):>5.1f}b {r['action']:>7s}"
             )
         if payload["alerts"]:
             lines.append("")

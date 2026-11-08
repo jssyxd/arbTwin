@@ -41,9 +41,6 @@ screening:
   min_median_basis_bps: 3.0
   max_oi_utilization: 0.35
 
-# the manipulation-cost gate: a 25 bps move for less than this is a thin reference
-min_manip_cost_usd: 25000
-
 # symbols known to be 24/7 crypto; everything else is treated as an equity
 # session (09:30-16:00 ET) for anchor freezing.  Extend as needed.
 crypto_symbols:

@@ -343,3 +343,24 @@ def test_lighter_funding_percent_per_hour_is_normalised():
 def test_okx_funding_fraction_per_8h_annualises_sanely():
     st = MarketStats("okx", "BTC", 1, 1, funding_rate=0.0001, funding_interval_h=8.0)
     assert st.funding_apr_pct == pytest.approx(10.95, rel=1e-3)
+
+
+def test_maker_round_trip_uses_passive_exit():
+    book = FeeBook(okx=FeeSchedule("okx", 2.0, 5.0), lighter=FeeSchedule("lighter", 0.0, 0.0))
+    # maker/maker both sides: 2 + 2 = 4 bps (not 7 with a taker exit)
+    assert book.round_trip_bps("lighter", "okx", "post_only", "post_only",
+                               close_type="post_only") == pytest.approx(4.0)
+    # hedge_now keeps the conservative taker-exit assumption
+    assert book.round_trip_bps("lighter", "okx") == pytest.approx(10.0)
+
+
+def test_gross_trigger_semantics():
+    okx_book = mk_book("okx", "AAPL", 100.0, 100.02, size=100)
+    lt_book = mk_book("lighter", "AAPL", 100.14, 100.16, size=100)   # ~14 bps rich
+    fees = FeeBook(okx=FeeSchedule("okx", 2.0, 5.0), lighter=FeeSchedule("lighter", 0.0, 0.0))
+    hit = compute_row("AAPL", okx_book, lt_book, 1.0, fees, sigma_1h_bps=20.0,
+                      band_override_bps=12.0)
+    assert hit.action == "MAKER" and hit.entry_band_bps == pytest.approx(12.0)
+    miss = compute_row("AAPL", okx_book, mk_book("lighter", "AAPL", 100.05, 100.07, size=100),
+                       1.0, fees, sigma_1h_bps=20.0, band_override_bps=12.0)
+    assert miss.action == "WAIT"

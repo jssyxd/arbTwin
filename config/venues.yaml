@@ -27,9 +27,12 @@ venues:
       taker_speed_bump_ms: 20
       post_only_speed_bump_ms: 0
       oi_utilization_max: 0.50  # OKX publishes no OI limit -> depth + move cost do the work
-      min_move_cost_usd: 50000.0
+      min_move_cost_usd: 40000.0
       cascade_proxy_monitor: 100.0
-      mark_divergence_max_bps: 30.0
+      # 30 was too tight for leveraged ETFs (SOXL printed 60bps mark-vs-index during
+      # US hours: the venue mark tracks futures while the index tracks ETF NAV).
+      # 80 still catches a genuinely broken oracle, which is what this gate is for.
+      mark_divergence_max_bps: 80.0
       min_depth_usd_1pct: 20000.0
 
   lighter:
@@ -52,7 +55,10 @@ venues:
       taker_speed_bump_ms: 300  # Standard tier taker bump; post-only has none
       post_only_speed_bump_ms: 0
       oi_utilization_max: 0.25
-      min_move_cost_usd: 50000.0
+      min_move_cost_usd: 40000.0
       cascade_proxy_monitor: 50.0
-      mark_divergence_max_bps: 40.0
+      # Lighter marks off impact prices, so a 3x ETF legitimately carries a
+      # 60-70 bps mark-vs-index premium (measured on SOXL).  40 blocked a healthy
+      # market; 100 still catches a broken oracle.
+      mark_divergence_max_bps: 100.0
       min_depth_usd_1pct: 20000.0
