@@ -25,6 +25,7 @@ refuses to sign.
 
 from __future__ import annotations
 
+import itertools
 import json
 import threading
 import time
@@ -317,7 +318,10 @@ class LighterVenue(VenueAdapter):
         size_int = int(round(order.qty_base * 10 ** spec.size_decimals))
         if size_int <= 0:
             raise VenueError("lighter: order rounds to zero size")
-        client_order_index = int(time.time() * 1000) % (2 ** 48 - 1)
+        # Lighter dedupes on client_order_index, so two orders must never share one.
+        # A wall-clock modulo is not monotonic (same millisecond -> same index, and
+        # two processes collide).  Seed from the clock once, then count.
+        client_order_index = next(self._order_seq) % (2 ** 48 - 1)
         resp = trader.create_order(
             market_index=int(spec.market_ref),
             client_order_index=client_order_index,

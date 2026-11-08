@@ -187,6 +187,8 @@ class TwinEngine:
                     max_hold_h=float(entry.get("max_hold_h") or self.cfg.limits.max_hold_h),
                     entry_deadline_s=float(entry.get("entry_deadline_s") or 5400.0),
                     exit_deadline_s=float(entry.get("exit_deadline_s") or 3600.0),
+                    max_unhedged_notional_usd=float(entry.get("max_unhedged_notional_usd")
+                                                    or self.cfg.limits.max_unhedged_notional_usd),
                 ) if str(entry.get("entry_bps_p95") or entry.get("band_override_bps")) else None,
                 spec_okx=okx_specs[symbol],
                 spec_lighter=lighter_specs[symbol],
@@ -197,7 +199,9 @@ class TwinEngine:
             params = {s: st.wave_params for s, st in self.states.items() if st.wave_params}
             if params:
                 self.wave = WaveTrader(params, place=self._wave_place, cancel=self._wave_cancel,
-                                       persist=lambda rec: write_state(f"{self.cfg.state_dir}/rounds.jsonl", rec))
+                                       persist=lambda rec: write_state(f"{self.cfg.state_dir}/rounds.jsonl", rec),
+                                       simulate_fills=self.cfg.dry_run,
+                                       on_error=lambda msg: self._alert("warn", "wave", msg))
                 for symbol in params:
                     self.states[symbol].band_override_bps = params[symbol].entry_bps
         self._loaded = True
@@ -597,6 +601,9 @@ class TwinEngine:
             return
         for _key, pos in positions.items():
             if abs(getattr(pos, "qty_base", 0.0)) > 1e-12:
+                rnd = self.wave.rounds.get(pos.symbol) if self.wave else None
+                if rnd is not None and rnd.state is not RoundState.FLAT:
+                    continue        # our own open round, not an orphan
                 self.orphans[pos.symbol] = pos
                 self._alert("critical", pos.symbol,
                             f"orphan position at startup: {pos.venue} {pos.qty_base:+.6f} "
@@ -669,11 +676,18 @@ class TwinEngine:
             st = self.states.get(row.symbol)
             if st is None or st.wave_params is None or not self.wave.params.get(row.symbol):
                 continue
-            if row.symbol in self.orphans:
-                out.append({"symbol": row.symbol, "blocked": "orphan position on venue"})
-                continue
-            if not st.last_gate or not st.last_gate.allow:
-                continue
+            rnd = self.wave.round_for(row.symbol)
+            holding = rnd.state is not RoundState.FLAT
+            # A gate/notional failure may veto a *new* entry, but it must never
+            # stop the management of a position we already hold (exits, re-pegs,
+            # entry/exit deadlines).  Otherwise one REST hiccup parks the position
+            # with resting orders and no deadline for as long as the outage lasts.
+            if not holding:
+                if row.symbol in self.orphans:
+                    out.append({"symbol": row.symbol, "blocked": "orphan position on venue"})
+                    continue
+                if not st.last_gate or not st.last_gate.allow:
+                    continue
             try:
                 okx_book = self.okx.book(row.symbol)
                 lt_book = self.lighter.book(row.symbol)
@@ -681,10 +695,13 @@ class TwinEngine:
                 self._alert("warn", row.symbol, f"wave: book unavailable: {exc}")
                 continue
             fills = self.wave.poll_fills(row.symbol, okx_book, lt_book)
-            notional = self._target_notional(row.symbol)
-            if notional < 25.0:
-                continue
-            qty_okx = notional / max(okx_book.mid, 1e-12)
+            if holding:
+                notional = 0.0        # not consumed by ENTRY_PARTIAL/HEDGED/EXIT states
+            else:
+                notional = self._target_notional(row.symbol)
+                if notional < 25.0:
+                    continue
+            qty_okx = notional / max(okx_book.mid, 1e-12) if notional else 0.0
             payload = self.wave.step(row.symbol, row.basis_bps, okx_book, lt_book,
                                      st.unit_ratio, qty_okx, row.maker_net_bps)
             payload["fills"] = fills
@@ -797,7 +814,6 @@ class TwinEngine:
     def run_once(self) -> dict:
         snap = self.snapshot()
         self._update_orphans(snap)
-        self._reconcile_orphans()
         if self.cfg.strategy == "wave":
             executed = self.wave_step(snap)
             risk_actions = []
@@ -823,7 +839,18 @@ class TwinEngine:
         write_state(f"{self.cfg.state_dir}/snapshot.jsonl", payload)
         return payload
 
+    def _assert_live_is_safe(self) -> None:
+        """Live trading needs venue fill reporting; the book-crossing proxy is dry-run only."""
+        if self.cfg.dry_run:
+            return
+        raise RuntimeError(
+            "live trading is disabled in this build: fills are inferred from book crossings "
+            "(dry-run only) and there is no order-state reconciliation yet. "
+            "Run with ARBTWIN_DRY_RUN=1 until venue fill polling lands."
+        )
+
     def run_forever(self, iterations: int = 0, interval_s: float | None = None) -> None:
+        self._assert_live_is_safe()
         interval = (interval_s if interval_s is not None else self.cfg.poll_interval_ms / 1000.0)
         # rate-limit floor: each symbol costs ~2 REST calls per poll and
         # `max_open_symbols` is not the universe size — scale, never hammer.

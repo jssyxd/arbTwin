@@ -63,11 +63,18 @@ class WaveTrader:
     def __init__(self, params_by_symbol: dict[str, wave.WaveParams],
                  place: Callable[[OrderRequest], Fill],
                  cancel: Callable[[str, str, str], bool] | None = None,
-                 persist: Callable[[dict], None] | None = None):
+                 persist: Callable[[dict], None] | None = None,
+                 simulate_fills: bool = True,
+                 on_error: Callable[[str], None] | None = None):
         self.params = params_by_symbol
         self.place = place
         self.cancel = cancel or (lambda symbol, venue, order_id: True)
         self.persist = persist or (lambda payload: None)
+        # "did the book trade through my price" is a *dry-run* proxy.  In live mode
+        # fills must come from the venue (order state / fills channel); inventing
+        # them from the book would silently desynchronise the round from the account.
+        self.simulate_fills = simulate_fills
+        self.on_error = on_error or (lambda msg: None)
         self.rounds: dict[str, wave.Round] = {}
         self.quotes: dict[tuple[str, str], RestingQuote] = {}
         self._seq = 0
@@ -83,7 +90,10 @@ class WaveTrader:
     def _drop_quotes(self, symbol: str, venue: str | None = None) -> None:
         for key in [k for k in self.quotes if k[0] == symbol and (venue in (None, k[1]))]:
             q = self.quotes.pop(key)
-            self.cancel(symbol, q.venue, q.order_id)
+            if not self.cancel(symbol, q.venue, q.order_id):
+                # A failed cancel is a *live* order that can still fill; it must be
+                # visible, not swallowed (it would desync the round on the next fill).
+                self.on_error(f"cancel failed: {q.venue} {symbol} order={q.order_id} px={q.px}")
 
     def open_quotes(self, symbol: str) -> list[RestingQuote]:
         return [q for (s, _), q in self.quotes.items() if s == symbol]
@@ -93,6 +103,8 @@ class WaveTrader:
         """Advance the round for every resting quote the book has traded through."""
         rnd = self.round_for(symbol)
         events: list[dict] = []
+        if not self.simulate_fills:
+            return events
         for key, quote in list(self.quotes.items()):
             if key[0] != symbol:
                 continue

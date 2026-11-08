@@ -269,7 +269,9 @@ def test_exit_queue_is_patient_then_escalates():
     assert escalated.tif == "ioc"
     t.forced = True
     forced = q.plan(t, book)
-    assert forced.order_type == "market"
+    # no market orders in this strategy: a forced exit is an aggressive limit
+    assert forced.order_type == "limit" and forced.tif == "ioc"
+    assert forced.px < book.bid           # crosses the touch, collared downwards
 
 
 def test_exit_queue_accumulates_same_ticket():

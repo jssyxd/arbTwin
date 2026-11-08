@@ -259,6 +259,7 @@ def mk_wave_cfg() -> AppConfig:
     cfg.symbols = [{
         "symbol": "AAPL", "unit_ratio": 1.0, "sigma_1h_bps": 40.0, "basis_sigma_bps": 6.0,
         "session": "crypto", "entry_bps_p95": 14.0, "exit_bps_p50": 4.5,
+        "max_unhedged_notional_usd": 10_000.0,
     }]
     return cfg
 
@@ -391,3 +392,12 @@ def test_orphan_position_blocks_wave_entries_until_flat():
     # once the venue reports flat, the block is lifted
     engine._update_orphans({"positions": {}})
     assert "AAPL" not in engine.orphans
+
+
+def test_live_mode_is_refused_until_fill_reconciliation_exists():
+    """Live fills are inferred from book crossings (dry-run proxy only). Until the
+    venue order-state path exists, starting live must fail loudly, not invent PnL."""
+    engine, _okx, _lt = mk_engine()
+    engine.cfg.dry_run = False
+    with pytest.raises(RuntimeError, match="fills are inferred"):
+        engine.run_forever(iterations=1)

@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## v0.2.3 — 对抗式评审修正（2026-11-08）
+
+一组 reviewer 透镜发现的 8 个缺陷，全部有测试：
+
+- **post-only 价位错误**：卖单挂在 best bid、买单挂在 best ask（都可立即成交），
+  live 下会被两所拒绝/自动撤销 → 拆 `passive_px()` / `marketable_px()`，仅 IOC 用后者。
+- **live 成交是虚构的**：`poll_fills` 用盘口穿越推断成交且不看渠道回报；撤单失败被吞。
+  现在 `simulate_fills` 只在 dry-run 生效，撤单失败告警，**live 启动直接拒绝**，
+  直到订单状态对账落地（宁可拒绝运行，也不凭空生成 PnL）。
+- **orphan 对账每 poll 执行**：会把自己 wave 的持仓当孤儿并永久阻断 → 只在启动执行，
+  开盘中的 round 不参与判断。
+- **ABORT_UNWIND 的成交记错腿** → 状态机卡死；已加路由与测试。
+- **新轮不重置** `escalation_used / frozen / round_id` → 第二次升级死挂陈旧价；已重置。
+- **gate/notional 失败会停掉持仓管理** → 非 FLAT 一律继续 poll_fills/step。
+- **`max_unhedged_notional_usd` 无执行点**、ENTRY_PARTIAL 无逆向止损、forced 平仓用市价
+  → 裸腿双阈值 abort；forced 改带 collar 的 IOC 限价。
+- Lighter `client_order_index` 改为单调计数（同毫秒不再撞号）；幂等重发仍待办。
+
 ## v0.2.2 — Lighter 双 key 拆分（挂单 / 吃单）（2026-11-08）
 
 - `LighterCredentials` 增加 `api_private_key_taker` / `api_key_index_taker`；

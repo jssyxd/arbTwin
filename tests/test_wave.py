@@ -29,7 +29,9 @@ def mk_books(okx_mid=100.0, lt_offset_bps=0.0, size=500.0) -> tuple[Book, Book]:
 
 
 def mk_round(entry_bps=14.0, exit_bps=4.5) -> Round:
-    return Round(symbol="X", params=WaveParams(entry_bps=entry_bps, exit_bps=exit_bps),
+    # generous naked-leg budget: these tests trade 4 units at ~$100 = $400 notional
+    return Round(symbol="X", params=WaveParams(entry_bps=entry_bps, exit_bps=exit_bps,
+                                               max_unhedged_notional_usd=10_000.0),
                  round_id=1)
 
 
@@ -190,3 +192,54 @@ def test_unchanged_quote_is_not_cancelled_and_replaced():
     okx2 = Book("okx", "X", bids=[(99.96, 500)], asks=[(100.00, 500)])  # touch moved
     trader.step("X", 20.0, okx2, lt, 1.0, 4.0, 16.0)
     assert len(placed) == 3 and cancelled              # only the moved leg is re-pegged
+
+
+# --------------------------------------------------------------------------- #
+# regressions from the adversarial review (see docs/REVIEW-2026-11-08.md)
+# --------------------------------------------------------------------------- #
+def test_quotes_are_passive_not_marketable():
+    """sell must join the ask, buy must join the bid -- otherwise post-only is
+    rejected/cancelled by both venues and the 'maker' strategy is all taker."""
+    r = mk_round()
+    okx, lt = mk_books(lt_offset_bps=20.0)
+    intents = decide(r, 20.0, okx, lt, 1.0, 4.0, 16.0)
+    by = {i.venue: i.order for i in intents if i.kind == "quote"}
+    assert by["lighter"].side == "sell" and by["lighter"].px == lt.ask
+    assert by["okx"].side == "buy" and by["okx"].px == okx.bid
+
+
+def test_abort_unwind_fill_returns_the_round_to_flat():
+    r = mk_round()
+    okx, lt = mk_books(lt_offset_bps=20.0)
+    decide(r, 20.0, okx, lt, 1.0, 4.0, 16.0)
+    on_fill(r, "lighter", 4.0, lt.bid)
+    decide(r, 3.0, okx, lt, 1.0, 4.0, -1.0)          # -> ABORT_UNWIND
+    assert r.state is RoundState.ABORT_UNWIND
+    on_fill(r, "lighter", 4.0, lt.ask)               # unwind leg fills
+    assert r.state is RoundState.FLAT
+    assert all(l.is_filled for l in r.exit_legs)
+
+
+def test_new_round_resets_escalation_frozen_and_round_id():
+    r = mk_round()
+    r.escalation_used = True
+    r.frozen["okx"] = 12.34
+    r.exit_legs = [Leg("okx", "sell", 1.0)]
+    first_id = r.round_id
+    okx, lt = mk_books(lt_offset_bps=20.0)
+    decide(r, 20.0, okx, lt, 1.0, 4.0, 16.0)         # FLAT -> ENTRY_QUOTING
+    assert r.escalation_used is False
+    assert r.frozen == {} and r.exit_legs == []
+    assert r.round_id == first_id + 1
+
+
+def test_naked_leg_over_the_notional_budget_aborts_immediately():
+    r = Round(symbol="X", params=WaveParams(entry_bps=14.0, exit_bps=4.5,
+                                            max_unhedged_notional_usd=50.0),
+              round_id=1)
+    okx, lt = mk_books(lt_offset_bps=20.0)
+    decide(r, 20.0, okx, lt, 1.0, 4.0, 16.0)
+    on_fill(r, "lighter", 4.0, lt.bid)               # ~ $400 naked > $50 budget
+    intents = decide(r, 20.0, okx, lt, 1.0, 4.0, 16.0)
+    assert r.state is RoundState.ABORT_UNWIND
+    assert any("unhedged" in n for n in r.notes)

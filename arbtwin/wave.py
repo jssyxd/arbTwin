@@ -70,6 +70,10 @@ class WaveParams:
     # "half a basis point" of net edge cannot pay for a single bad fill.
     min_edge_bps: float = 2.0
     adverse_basis_stop_bps: float = 25.0
+    # ENTRY_PARTIAL is the only state holding a naked leg.  `limits.max_unhedged_*
+    # existed in config but was never read; enforce it here.
+    max_unhedged_notional_usd: float = 150.0
+    adverse_move_stop_bps: float = 60.0
 
 
 @dataclass
@@ -158,6 +162,21 @@ class Intent:
         return d
 
 
+def passive_px(book: Book, side: str) -> float:
+    """Price that *rests* on our own side of the book.
+
+    A sell at the best bid is marketable (a resting bid is willing to buy at
+    that price), so post-only would be rejected or auto-cancelled.  To be a
+    maker you must join your own side: sell at the ask, buy at the bid.
+    """
+    return book.ask if side == "sell" else book.bid
+
+
+def marketable_px(book: Book, side: str) -> float:
+    """Price that crosses: sell into the bid, buy from the ask (used for IOC)."""
+    return book.bid if side == "sell" else book.ask
+
+
 def _direction(basis_bps: float) -> str:
     return "long_okx_short_lighter" if basis_bps >= 0 else "long_lighter_short_okx"
 
@@ -166,12 +185,12 @@ def _entry_orders(basis_bps: float, qty_okx: float, ratio: float, okx: Book, lt:
     """Both legs at the touch, on the correct sides."""
     if basis_bps >= 0:          # lighter rich -> sell lighter, buy okx
         return [
-            Leg("lighter", "sell", qty_okx / ratio, px=lt.bid),
-            Leg("okx", "buy", qty_okx, px=okx.ask),
+            Leg("lighter", "sell", qty_okx / ratio, px=passive_px(lt, "sell")),
+            Leg("okx", "buy", qty_okx, px=passive_px(okx, "buy")),
         ]
     return [
-        Leg("lighter", "buy", qty_okx / ratio, px=lt.ask),
-        Leg("okx", "sell", qty_okx, px=okx.bid),
+        Leg("lighter", "buy", qty_okx / ratio, px=passive_px(lt, "buy")),
+        Leg("okx", "sell", qty_okx, px=passive_px(okx, "sell")),
     ]
 
 
@@ -179,11 +198,22 @@ def _requote(order_leg: Leg, book: Book, params: WaveParams) -> Optional[OrderRe
     """Re-peg a resting quote at the current touch (post-only, reduce_only off)."""
     if order_leg.remaining <= 0:
         return None
-    px = book.bid if order_leg.side == "sell" else book.ask
+    px = passive_px(book, order_leg.side)
     if px <= 0:
         return None
     return OrderRequest(order_leg.venue, "", order_leg.side, order_leg.remaining, px,
                         order_type="limit", tif="post_only")
+
+
+def _abort(round_: Round, filled: list[Leg], empty: list[Leg], _unused: float) -> list[Intent]:
+    """Move a partially filled round into ABORT_UNWIND (passive unwind of the filled leg)."""
+    round_.notes.append(f"abort: passive unwind of {len(filled)} leg(s)")
+    round_.exit_legs = [Leg(l.venue, "sell" if l.side == "buy" else "buy", l.filled_qty, px=0.0)
+                        for l in filled]
+    round_.exit_state_ts = time.time()
+    round_.state = RoundState.ABORT_UNWIND
+    out = [Intent("cancel", reason="abort", venue=l.venue) for l in empty]
+    return out
 
 
 def decide(round_: Round, basis_bps: float, okx_book: Book, lt_book: Book,
@@ -202,6 +232,16 @@ def decide(round_: Round, basis_bps: float, okx_book: Book, lt_book: Book,
         if passive_net_bps < p.min_edge_bps:
             return [Intent("note", reason=f"passive net {passive_net_bps:.1f}bps below {p.min_edge_bps:.1f}")]
         round_.state = RoundState.ENTRY_QUOTING
+        # reset every per-round artefact: reusing a Round without this leaked
+        # `escalation_used` (so the 60-minute survival IOC never fired again),
+        # kept stale `frozen` prices, and made every round share one round_id.
+        round_.round_id += 1
+        round_.escalation_used = False
+        round_.frozen.clear()
+        round_.exit_legs = []
+        round_.exit_ts = 0.0
+        round_.exit_state_ts = 0.0
+        round_.entry_legs = []
         round_.direction = _direction(basis_bps)
         round_.entry_basis_bps = basis_bps
         round_.entry_ts = time.time()
@@ -237,6 +277,22 @@ def decide(round_: Round, basis_bps: float, okx_book: Book, lt_book: Book,
     if round_.state == RoundState.ENTRY_PARTIAL:
         filled = [l for l in round_.entry_legs if l.filled_qty > 0]
         empty = [l for l in round_.entry_legs if l.filled_qty <= 0]
+        # a naked leg is bounded by money and by adverse price, not only by time
+        naked_usd = 0.0
+        worst_adverse_bps = 0.0
+        for leg in filled:
+            book = lt_book if leg.venue == "lighter" else okx_book
+            mark = book.mid or leg.filled_px
+            naked_usd += abs(leg.filled_qty) * max(mark, 1e-12)
+            sign = 1.0 if leg.side == "buy" else -1.0
+            move_bps = (mark - leg.filled_px) / max(leg.filled_px, 1e-12) * 1e4 * sign
+            worst_adverse_bps = min(worst_adverse_bps, move_bps)
+        if naked_usd > p.max_unhedged_notional_usd:
+            round_.notes.append(f"unhedged {naked_usd:.0f} USD > {p.max_unhedged_notional_usd:.0f} -> abort")
+            return _abort(round_, filled, empty, -1.0)
+        if worst_adverse_bps <= -p.adverse_move_stop_bps:
+            round_.notes.append(f"naked leg {worst_adverse_bps:.0f}bps adverse -> abort")
+            return _abort(round_, filled, empty, -1.0)
         # The dislocation we were paid to sell into is gone, or patience ran out:
         # give up on pairing and unwind the filled leg *passively*.
         if abs(basis_bps) <= p.exit_bps or round_.entry_age_s >= p.entry_deadline_s:
@@ -269,14 +325,12 @@ def decide(round_: Round, basis_bps: float, okx_book: Book, lt_book: Book,
             round_.escalation_used = True
             round_.notes.append("abort unwind deadline hit -> single flagged IOC")
             return [Intent("ioc", OrderRequest(l.venue, round_.symbol, l.side, l.remaining,
-                                               (lt_book.bid if l.venue == "lighter" else okx_book.bid)
-                                               if l.side == "sell" else
-                                               (lt_book.ask if l.venue == "lighter" else okx_book.ask),
+                                               marketable_px(lt_book if l.venue == "lighter" else okx_book, l.side),
                                                order_type="limit", tif="ioc", reduce_only=True),
                            "abort escalation (cost)", l.venue) for l in pending]
         for leg in pending:
             book = lt_book if leg.venue == "lighter" else okx_book
-            px = book.bid if leg.side == "sell" else book.ask
+            px = passive_px(book, leg.side)
             out.append(Intent("quote", OrderRequest(leg.venue, round_.symbol, leg.side,
                                                     leg.remaining, px, order_type="limit",
                                                     tif="post_only", reduce_only=True),
@@ -296,11 +350,11 @@ def decide(round_: Round, basis_bps: float, okx_book: Book, lt_book: Book,
         round_.exit_legs = []
         for leg in round_.entry_legs:
             book = lt_book if leg.venue == "lighter" else okx_book
-            px = book.bid if leg.side == "buy" else book.ask
+            exit_side = "sell" if leg.side == "buy" else "buy"
+            px = passive_px(book, exit_side)
             if p.freeze_px_on_trigger:
                 round_.frozen[leg.venue] = px
-            round_.exit_legs.append(Leg(leg.venue, "sell" if leg.side == "buy" else "buy",
-                                        leg.filled_qty, px=px))
+            round_.exit_legs.append(Leg(leg.venue, exit_side, leg.filled_qty, px=px))
         round_.notes.append(f"exit triggered at basis {basis_bps:+.1f}bps "
                             f"({'time' if round_.hold_h >= p.max_hold_h else 'target'})")
         for leg in round_.exit_legs:
@@ -323,7 +377,7 @@ def decide(round_: Round, basis_bps: float, okx_book: Book, lt_book: Book,
             intents = []
             for leg in pending:
                 book = lt_book if leg.venue == "lighter" else okx_book
-                px = book.bid if leg.side == "sell" else book.ask
+                px = marketable_px(book, leg.side)
                 intents.append(Intent("ioc", OrderRequest(leg.venue, round_.symbol, leg.side,
                                                           leg.remaining, px, order_type="limit",
                                                           tif="ioc", reduce_only=True),
@@ -334,7 +388,7 @@ def decide(round_: Round, basis_bps: float, okx_book: Book, lt_book: Book,
             if p.freeze_px_on_trigger:
                 px = round_.frozen.get(leg.venue, leg.px)
             else:
-                px = book.bid if leg.side == "sell" else book.ask
+                px = passive_px(book, leg.side)
             out.append(Intent("quote", OrderRequest(leg.venue, round_.symbol, leg.side,
                                                     leg.remaining, px, order_type="limit",
                                                     tif="post_only", reduce_only=True),
@@ -348,8 +402,10 @@ def decide(round_: Round, basis_bps: float, okx_book: Book, lt_book: Book,
 # fill bookkeeping (called by the engine when a venue reports a fill)
 # --------------------------------------------------------------------------- #
 def on_fill(round_: Round, venue: str, qty: float, px: float) -> None:
-    legs = round_.exit_legs if round_.state in (RoundState.EXIT_QUOTING, RoundState.EXIT_PARTIAL) \
-        else round_.entry_legs
+    legs = (round_.exit_legs
+            if round_.state in (RoundState.EXIT_QUOTING, RoundState.EXIT_PARTIAL,
+                                RoundState.ABORT_UNWIND)
+            else round_.entry_legs)
     for leg in legs:
         if leg.venue != venue:
             continue
@@ -370,6 +426,10 @@ def on_fill(round_: Round, venue: str, qty: float, px: float) -> None:
             round_.state = RoundState.EXIT_PARTIAL
         else:
             round_.state = RoundState.FLAT
+    if round_.state is RoundState.ABORT_UNWIND and round_.exit_legs \
+            and all(l.is_filled for l in round_.exit_legs):
+        round_.state = RoundState.FLAT
+        round_.notes.append("abort unwind complete: flat")
 
 
 def round_pnl_bps(round_: Round) -> Optional[float]:

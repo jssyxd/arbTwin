@@ -89,8 +89,12 @@ class ExitQueue:
         sign = -1.0 if ticket.side == "sell" else 1.0
 
         if ticket.forced:
-            return OrderRequest(ticket.venue, ticket.symbol, ticket.side, qty,
-                                passive_side, order_type="market", tif="ioc", reduce_only=True)
+            # The operator's rule is "no market orders in this strategy", including
+            # exits.  A forced exit is an *aggressive limit* through the touch with
+            # a collar: it fills like a taker up to `escalation_bps`, and no further.
+            cross = passive_side * (1 + sign * ticket.escalation_bps / 1e4)
+            return OrderRequest(ticket.venue, ticket.symbol, ticket.side, qty, cross,
+                                order_type="limit", tif="ioc", reduce_only=True)
 
         if ticket.time_left <= 60:
             # escalate: pay up to escalation_bps, still a limit order
