@@ -257,6 +257,8 @@ class SpreadRow:
     # but you own the one-sided-fill risk instead of paying for the hedge
     maker_fee_bps: float = 0.0
     spread_cost_bps: float = 0.0
+    okx_spread_bps: float = 0.0
+    lt_spread_bps: float = 0.0
     maker_net_bps: float = 0.0
     maker_band_bps: float = 0.0
     direction: str = "flat"          # long_lighter_short_okx | long_okx_short_lighter | flat

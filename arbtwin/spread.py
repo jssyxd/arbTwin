@@ -118,6 +118,8 @@ def compute_row(
         net_edge_bps=net, entry_band_bps=band,
         maker_fee_bps=maker_fee, maker_net_bps=maker_net, maker_band_bps=maker_band,
         spread_cost_bps=spread_cost_bps,
+        okx_spread_bps=(okx_book.spread_bps if okx_book.spread_bps < 1e4 else 0.0),
+        lt_spread_bps=(lighter_book.spread_bps if lighter_book.spread_bps < 1e4 else 0.0),
         direction=direction,
     )
     gross_triggered = abs(basis) >= band if band_override_bps > 0 else False
