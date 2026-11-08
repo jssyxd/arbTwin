@@ -449,7 +449,7 @@ arbtwin/
   venues/{okx,lighter,lighter_trade}.py, venues/base.py
   backtest/replay.py               因果回放 + walk-forward
 config/{venues,risk,symbols}.yaml
-tests/                            43 个纯逻辑测试（无网络）：校准三态、带宽退化、
+tests/                            46 个纯逻辑测试（无网络）：校准三态、带宽退化、
                                   费率口径、机制门槛、矩阵方向、双腿计划、
                                   maker 单边成交转退出、回放因果性
 ```
