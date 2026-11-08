@@ -274,6 +274,16 @@ ARBTWIN_DRY_RUN=0 ARBTWIN_SYMBOLS=config/symbols.starter.yaml \
 
 ## 4. 部署（VPS）
 
+### 4.0 这台机器的物理限制（1 核 / 1 GB / 10 GB / Debian 12 / Python 3.11）
+
+| 约束 | 现实 | 对策 |
+|---|---|---|
+| 内存 960 MB | 单进程跑 arbTwin 足够（~80 MB），但**不能**和 NautilusTrader 同机同跑（import 就要 300–500 MB） | 两个 venv 分开；服务只挂 `arbtwin`；nautilus 只做回放/研究 |
+| Python 3.11.2 | `nautilus_trader 1.231` 要求 **≥3.12**，且只发 `manylinux_2_35` 的 cp312+ 轮子（189 MB） | 用 `uv python install 3.12` + 独立 venv，不做源码编译（1 核编译 Rust 会跑死） |
+| 磁盘 8 GB 可用 | nautilus 轮子 + 依赖 ≈ 400 MB；swap 1 GB | 够用，但不要 `git clone` nautilus 的完整历史（`--depth 1`） |
+| 网络 | 我们无法假设这台机器能直连两所 | 部署后先跑 4.6 的两条 `curl` 检查；不通就 `ARBTWIN_PROXY=` |
+| 单核 | `arbtwin screen` 全量 175 标的会占满 CPU 十几分钟 | 只跑 `--only`；全量扫描放本地/另一台机器 |
+
 ### 4.1 前置
 
 * Ubuntu 22.04/24.04 x86_64、Python ≥ 3.10（`tzdata` 已随包安装）；
@@ -331,6 +341,7 @@ LIGHTER_API_PRIVATE_KEY=...
 ### 4.5 systemd
 
 ```bash
+# 这台机器上一律先 dry-run（没有 key 时也只会 dry-run）
 sudo cp deploy/arbtwin.service /etc/systemd/system/arbtwin.service
 sudo systemctl daemon-reload && sudo systemctl enable --now arbtwin
 sudo journalctl -u arbtwin -f

@@ -1,6 +1,7 @@
 # arbTwin — OKX ↔ Lighter 双塔基差引擎
 
 > **实盘手册（部署 / 获利前提 / 标的筛选 / 监控 / 故障预案）**：[`docs/DEPLOYMENT.zh.md`](docs/DEPLOYMENT.zh.md)
+> **执行模式**：`config/risk.yaml → strategy: wave`（一轮一清、纯限价、两腿必须同时出清，见 `arbtwin/wave.py`）或 `maker_basis`（旧的两模式引擎）
 > **本次对话完整存档**：[`docs/conversation.html`](docs/conversation.html)
 >
 > 一个交易所（OKX，USDT 本位 CEX）与一个 zk-rollup DEX（Lighter，USDC 本位）之间，
