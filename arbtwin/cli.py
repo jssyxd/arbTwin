@@ -129,7 +129,7 @@ def cmd_monitor(args) -> int:
 def cmd_run(args) -> int:
     cfg = AppConfig.load()
     okx, lighter = _venues(cfg)
-    if not cfg.dry_run and not args.i_know:
+    if not cfg.dry_run and not args.i_know_what_im_doing:
         print("refusing to run live without --i-know-what-im-doing "
               "(reads ARBTWIN_DRY_RUN=0 and live credentials)", file=sys.stderr)
         return 2

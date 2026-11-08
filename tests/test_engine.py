@@ -215,3 +215,10 @@ def test_uncalibrated_symbol_is_refused():
     cfg.symbols = [{"symbol": "AAPL", "unit_ratio": 0.0}]
     engine = TwinEngine(cfg, FakeVenue("okx", 100, 100.1), FakeVenue("lighter", 100, 100.1))
     assert engine.load_universe() == {}
+
+def test_cli_refuses_live_run_without_the_flag(monkeypatch):
+    """ARBTWIN_DRY_RUN=0 must be a hard stop, not a crash and not a live start."""
+    from arbtwin import cli
+
+    monkeypatch.setenv("ARBTWIN_DRY_RUN", "0")
+    assert cli.main(["run", "--iterations", "1"]) == 2
