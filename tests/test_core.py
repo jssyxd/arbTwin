@@ -474,3 +474,22 @@ def test_maker_edge_is_symmetric_in_basis_sign():
     assert rich.maker_net_bps > 0 and cheap.maker_net_bps > 0
     assert abs(rich.maker_net_bps - cheap.maker_net_bps) < 1.0
     assert rich.action == "MAKER" and cheap.action == "MAKER"
+
+
+def test_okx_book_sizes_are_converted_from_contracts(monkeypatch):
+    """`/market/books` returns CONTRACTS. XAU ctVal=0.001 must divide depth by 1000."""
+    from arbtwin.venues import okx as okx_mod
+    from arbtwin.config import OkxCredentials
+    from arbtwin.models import MarketSpec
+
+    monkeypatch.setattr(okx_mod, "http_json",
+                        lambda *a, **k: {"code": "0", "data": [{
+                            "bids": [["4068.5", "48615", "0", "1"]],
+                            "asks": [["4069.0", "1000", "0", "1"]]}]})
+    v = okx_mod.OkxVenue(OkxCredentials())
+    v._by_symbol["XAU"] = MarketSpec("okx", "XAU", "XAU-USDT-SWAP", 1, 0, 0.001, 0.0,
+                                     contract_multiplier=0.001)
+    book = v.book("XAU")
+    assert book.bids[0][1] == pytest.approx(48.615)     # 48615 contracts x 0.001
+    assert book.asks[0][1] == pytest.approx(1.0)
+    assert book.depth_usd(100.0) < 1e6                   # not the 1000x-inflated number
