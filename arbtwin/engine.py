@@ -485,7 +485,7 @@ class TwinEngine:
                                 f"one-sided maker fill on {q.venue} unhedged "
                                 f"{(now - oldest_fill) * 1000:.0f}ms — queuing passive exit")
                     st = self.states[symbol]
-                    st.side = "long" if q.side == "buy" else "short"
+                    st.side = f"{'long' if q.side == 'buy' else 'short'}_{'lighter' if q.venue == LIGHTER else 'okx'}"
                     st.entry_ts = q.fill_ts
                     st.entry_okx = q.fill_px if q.venue == OKX else 0.0
                     st.entry_lighter = q.fill_px if q.venue == LIGHTER else 0.0
@@ -529,6 +529,8 @@ class TwinEngine:
         for symbol, st in self.states.items():
             if st.side == "flat":
                 continue
+            if abs(self._position_lighter(st)) < 1e-12 and abs(self._position_okx(st)) < 1e-12:
+                continue
             row = st.last_row
             if not row:
                 continue
@@ -571,21 +573,30 @@ class TwinEngine:
         return actions
 
     def _open_exit(self, st: SymbolState, reason: str, forced: bool = False) -> dict:
-        lt_qty = abs(self._position_lighter(st))
-        ox_qty = abs(self._position_okx(st))
-        ticket = ExitTicket(symbol=st.symbol, venue=LIGHTER,
-                            side="sell" if st.side == "long_lighter" else "buy",
-                            qty_base=lt_qty, remaining=lt_qty,
-                            forced=forced)
-        self.exits.add(ticket)
-        self._alert("warn" if not forced else "critical", st.symbol, f"exit queued: {reason}")
-        # hedge leg exits at the same time, via its own ticket on OKX
-        hedge_ticket = ExitTicket(symbol=st.symbol, venue=OKX,
-                                  side="buy" if st.side == "long_lighter" else "sell",
-                                  qty_base=ox_qty, remaining=ox_qty,
-                                  forced=forced)
-        self.exits.add(hedge_ticket)
-        return {"symbol": st.symbol, "exit_queued": reason, "forced": forced}
+        """Queue passive exits for whatever legs actually exist.
+
+        Written around positions rather than around `st.side`, because the
+        interesting failure mode is a *single* leg (one-sided maker fill, hedge
+        rejected) and that leg still has to be unwound with the correct side.
+        """
+        lt_qty = self._position_lighter(st)
+        ox_qty = self._position_okx(st)
+        queued = 0
+        if abs(lt_qty) > 1e-12:
+            self.exits.add(ExitTicket(symbol=st.symbol, venue=LIGHTER,
+                                      side="sell" if lt_qty > 0 else "buy",
+                                      qty_base=abs(lt_qty), remaining=abs(lt_qty),
+                                      forced=forced))
+            queued += 1
+        if abs(ox_qty) > 1e-12:
+            self.exits.add(ExitTicket(symbol=st.symbol, venue=OKX,
+                                      side="sell" if ox_qty > 0 else "buy",
+                                      qty_base=abs(ox_qty), remaining=abs(ox_qty),
+                                      forced=forced))
+            queued += 1
+        level = "warn" if not forced else "critical"
+        self._alert(level, st.symbol, f"exit queued ({queued} leg(s)): {reason}")
+        return {"symbol": st.symbol, "exit_queued": reason, "legs": queued, "forced": forced}
 
     def _position_lighter(self, st: SymbolState) -> float:
         # in dry run the engine tracks its own book; live reads venue positions

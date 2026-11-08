@@ -171,8 +171,30 @@ def test_one_sided_maker_fill_goes_to_exit_queue():
     okx._bid, okx._ask = 101.0, 101.05
     engine._poll_maker(snap["rows"])
     assert engine.maker_quotes == []
-    assert engine.exits.open_tickets(), "one-sided fill must be queued for passive exit"
+    tickets = engine.exits.open_tickets()
+    assert tickets, "one-sided fill must be queued for passive exit"
+    # we sold Lighter -> the exit must buy it back, and nothing else is queued
+    assert [t.venue for t in tickets] == ["lighter"]
+    assert tickets[0].side == "buy" and tickets[0].qty_base > 0
     assert any(a["level"] == "critical" for a in engine.alerts)
+
+
+def test_one_sided_fill_on_okx_exits_with_sell_side():
+    engine, okx, lt = mk_engine()
+    snap = engine.snapshot()
+    row = snap["rows"][0]
+    row.action, row.maker_net_bps, row.maker_band_bps = "MAKER", 30.0, 10.0
+    engine.execute_best(snap)
+    quotes = {q.venue: q for q in engine.maker_quotes}
+    # only the OKX buy quote fills (Lighter book moves away)
+    quotes["okx"].filled = True
+    quotes["okx"].fill_ts = time.time() - 5.0
+    quotes["okx"].fill_px = quotes["okx"].px
+    lt._bid, lt._ask = 99.0, 99.05
+    engine._poll_maker(snap["rows"])
+    tickets = engine.exits.open_tickets()
+    assert [t.venue for t in tickets] == ["okx"]
+    assert tickets[0].side == "sell" and tickets[0].qty_base > 0
 
 
 def test_sizing_respects_depth_and_hard_cap():
