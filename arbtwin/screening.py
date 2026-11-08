@@ -253,6 +253,12 @@ def screen_symbols(cfg: AppConfig, okx: OkxVenue, lighter: LighterVenue,
 
 
 def build_symbols_yaml(rows: list[ScreenRow], generated_at: Optional[float] = None) -> dict:
+    """Render the universe file the engine consumes.
+
+    `preferred_mode` is a *hint for human review* (which execution mode had the
+    better historical economics), not a constraint: the engine re-decides every
+    poll from live fees, basis and greeks.
+    """
     approved = [r for r in rows if r.approved]
     rejected = [r for r in rows if not r.approved]
     return {
