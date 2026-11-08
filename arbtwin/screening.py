@@ -174,7 +174,11 @@ def screen_symbols(cfg: AppConfig, okx: OkxVenue, lighter: LighterVenue,
         fee_book = fee_from_market_specs(spec_okx, spec_lt)
         fee_bps = fee_book.round_trip_bps(LIGHTER, OKX)
         row.fee_bps = fee_bps
-        row.maker_fee_bps = fee_book.round_trip_bps(LIGHTER, OKX, "post_only", "post_only")
+        # close_type="post_only": a maker/maker round trip exits passively too.
+        # Omitting it charges a taker exit (7 bps instead of 4) and rejects every
+        # symbol for a cost the strategy never pays.
+        row.maker_fee_bps = fee_book.round_trip_bps(LIGHTER, OKX, "post_only", "post_only",
+                                                    close_type="post_only")
         latency = latency_cost_bps(sigma, mech.get(LIGHTER).taker_speed_bump_ms + 120)
         row.latency_bps = latency
         row.session = classify_session(symbol, extra_crypto)
@@ -205,7 +209,10 @@ def screen_symbols(cfg: AppConfig, okx: OkxVenue, lighter: LighterVenue,
         adverse_margin_bps = float((cfg.risk.get("screening") or {}).get("adverse_margin_bps", 1.0))
         row.spread_okx_bps = okx_book.spread_bps
         row.spread_lighter_bps = lt_book.spread_bps
-        row.b_star_bps = (fee_bps + 2.0 * ((row.spread_okx_bps + row.spread_lighter_bps) / 2.0)
+        # b* must use the fee the strategy actually pays (maker, 4 bps), not the
+        # taker-hedge round trip (10 bps) -- otherwise every symbol looks dead.
+        row.b_star_bps = (row.maker_fee_bps
+                          + 2.0 * ((row.spread_okx_bps + row.spread_lighter_bps) / 2.0)
                           + adverse_margin_bps)
         row.depth_okx_1pct, cov_okx, comp_okx = okx_book.depth_covered(100.0)
         row.depth_lighter_1pct, cov_lt, comp_lt = lt_book.depth_covered(100.0)

@@ -1,63 +1,219 @@
-generated_at: '2026-11-08T12:42:59Z'
+generated_at: '2026-11-08T21:10:00Z'
+note: Rebuilt after pricing b* = fees(4bps) + 2x average half-spread + 1bp adverse
+  margin. SOXL/GRAM/MRVL/SNDK fell below b* and moved to `watch`; MSTR returns after
+  the 2026-11-11 MSCI decision. Spreads are a 2026-11-08 sample — rerun `arbtwin screen
+  --only COIN,VVV,LIT --days 14` to refresh them.
 universe:
-  candidates: 8
-  approved: 0
-  rejected: 8
-approved: []
-rejected:
-- symbol: SNDK
-  reasons:
-  - basis p95 8.2bps < b* 12.9bps (fees 7.0 + 2x half-spread 1.2/0.7) -> maker net
-    -4.8bps
-  ratio_cv_pct: 0.0408
-  return_corr: 0.9993
-  net_taker_bps: -9.07
-- symbol: GRAM
-  reasons:
-  - basis p95 15.5bps < b* 22.8bps (fees 7.0 + 2x half-spread 9.4/2.4) -> maker net
-    -7.2bps
-  ratio_cv_pct: 0.0735
-  return_corr: 0.9933
-  net_taker_bps: -1.15
-- symbol: MSTR
-  reasons:
-  - basis p95 12.7bps < b* 13.3bps (fees 7.0 + 2x half-spread 0.8/1.6) -> maker net
-    -0.6bps
-  ratio_cv_pct: 0.0595
-  return_corr: 0.9978
-  net_taker_bps: -4.15
-- symbol: SOXL
-  reasons:
-  - basis p95 10.8bps < b* 17.5bps (fees 7.0 + 2x half-spread 2.2/4.3) -> maker net
-    -6.7bps
-  ratio_cv_pct: 0.0634
-  return_corr: 0.9995
-  net_taker_bps: -7.61
+  candidates: 175
+  approved: 3
+  rejected: 5
+approved:
 - symbol: COIN
-  reasons:
-  - basis p95 10.4bps < b* 12.9bps (fees 7.0 + 2x half-spread 0.7/1.2) -> maker net
-    -2.5bps
-  ratio_cv_pct: 0.0473
-  return_corr: 0.9981
-  net_taker_bps: -6.42
+  unit_ratio: 0.99837993
+  sigma_1h_bps: 88.45
+  basis_sigma_bps: 4.77
+  band_bps: 10.0
+  session: us_equity
+  preferred_mode: dual_maker
+  notes:
+    ratio_cv_pct: 0.0499
+    return_corr: 0.99833
+    score: 0.23
+    basis_p95_bps: 10.67
+    fill_probability: 0.063
+    basis14d_p95_bps: 10.39
+    basis14d_sig_bps: 4.77
+    halflife_h: 0.88
+    p95_minus_b_star_bps: 3.59
+  b_star_bps: 6.8
+  spread_okx_bps: 0.7
+  spread_lighter_bps: 1.1
+  entry_bps_p95: 10.39
+  exit_bps_p50: 2.71
+  band_override_bps: 10.4
+  entry_deadline_s: 5400
+  exit_deadline_s: 3600
+  max_hold_h: 4.0
 - symbol: VVV
-  reasons:
-  - basis p95 11.4bps < b* 14.0bps (fees 7.0 + 2x half-spread 0.5/2.5) -> maker net
-    -2.7bps
-  ratio_cv_pct: 0.0571
-  return_corr: 0.9993
-  net_taker_bps: -5.93
+  unit_ratio: 1.00028217
+  sigma_1h_bps: 125.14
+  basis_sigma_bps: 5.72
+  band_bps: 11.98
+  session: us_equity
+  preferred_mode: dual_maker
+  notes:
+    ratio_cv_pct: 0.0599
+    return_corr: 0.99934
+    score: 0.3
+    basis_p95_bps: 12.38
+    fill_probability: 0.057
+    basis14d_p95_bps: 11.38
+    basis14d_sig_bps: 5.72
+    halflife_h: 1.7
+    p95_minus_b_star_bps: 3.28
+  b_star_bps: 8.1
+  spread_okx_bps: 1.0
+  spread_lighter_bps: 2.1
+  entry_bps_p95: 11.38
+  exit_bps_p50: 3.5
+  band_override_bps: 11.4
+  entry_deadline_s: 5400
+  exit_deadline_s: 3600
+  max_hold_h: 4.0
 - symbol: LIT
-  reasons:
-  - basis p95 11.4bps < b* 13.8bps (fees 7.0 + 2x half-spread 0.6/2.2) -> maker net
-    -2.4bps
-  ratio_cv_pct: 0.0604
-  return_corr: 0.9994
-  net_taker_bps: -6.17
+  unit_ratio: 1.00069163
+  sigma_1h_bps: 155.24
+  basis_sigma_bps: 6.04
+  band_bps: 12.73
+  session: us_equity
+  preferred_mode: dual_maker
+  notes:
+    ratio_cv_pct: 0.0636
+    return_corr: 0.99937
+    score: 0.22
+    basis_p95_bps: 11.97
+    fill_probability: 0.043
+    basis14d_p95_bps: 11.39
+    basis14d_sig_bps: 6.04
+    halflife_h: 1.57
+    p95_minus_b_star_bps: 4.89
+  b_star_bps: 6.5
+  spread_okx_bps: 0.3
+  spread_lighter_bps: 1.2
+  entry_bps_p95: 11.39
+  exit_bps_p50: 4.13
+  band_override_bps: 11.4
+  entry_deadline_s: 5400
+  exit_deadline_s: 3600
+  max_hold_h: 4.0
+watch:
+- symbol: SNDK
+  unit_ratio: 0.99886378
+  sigma_1h_bps: 126.75
+  basis_sigma_bps: 4.1
+  band_bps: 10.0
+  session: us_equity
+  preferred_mode: dual_maker
+  notes:
+    ratio_cv_pct: 0.0436
+    return_corr: 0.99938
+    score: 0.11
+    basis_p95_bps: 9.46
+    fill_probability: 0.043
+    basis14d_p95_bps: 8.16
+    basis14d_sig_bps: 4.1
+    halflife_h: 0.82
+    p95_minus_b_star_bps: 0.76
+  b_star_bps: 7.4
+  spread_okx_bps: 1.2
+  spread_lighter_bps: 1.2
+  entry_bps_p95: 8.16
+  exit_bps_p50: 2.51
+  band_override_bps: 8.5
+  entry_deadline_s: 5400
+  exit_deadline_s: 3600
+  max_hold_h: 4.0
+- symbol: MSTR
+  unit_ratio: 0.99867595
+  sigma_1h_bps: 82.48
+  basis_sigma_bps: 5.9
+  band_bps: 11.07
+  session: us_equity
+  preferred_mode: dual_maker
+  notes:
+    ratio_cv_pct: 0.0554
+    return_corr: 0.99831
+    score: 0.18
+    basis_p95_bps: 10.93
+    fill_probability: 0.047
+    basis14d_p95_bps: 12.45
+    basis14d_sig_bps: 5.9
+    halflife_h: 1.34
+    p95_minus_b_star_bps: 5.05
+  b_star_bps: 7.4
+  spread_okx_bps: 0.8
+  spread_lighter_bps: 1.6
+  entry_bps_p95: 12.45
+  exit_bps_p50: 3.56
+  band_override_bps: 12.4
+  entry_deadline_s: 5400
+  exit_deadline_s: 3600
+  max_hold_h: 4.0
+- symbol: SOXL
+  unit_ratio: 0.9987635
+  sigma_1h_bps: 244.14
+  basis_sigma_bps: 6.34
+  band_bps: 13.74
+  session: us_equity
+  preferred_mode: dual_maker
+  notes:
+    ratio_cv_pct: 0.0687
+    return_corr: 0.99955
+    score: 0.31
+    basis_p95_bps: 13.71
+    fill_probability: 0.047
+    basis14d_p95_bps: 10.79
+    basis14d_sig_bps: 6.34
+    halflife_h: 0.76
+    p95_minus_b_star_bps: -0.71
+  b_star_bps: 11.5
+  spread_okx_bps: 2.2
+  spread_lighter_bps: 4.3
+  entry_bps_p95: 10.79
+  exit_bps_p50: 3.71
+  band_override_bps: 13.2
+  entry_deadline_s: 5400
+  exit_deadline_s: 3600
+  max_hold_h: 4.0
+- symbol: GRAM
+  unit_ratio: 1.00110561
+  sigma_1h_bps: 56.82
+  basis_sigma_bps: 7.38
+  band_bps: 14.97
+  session: us_equity
+  preferred_mode: dual_maker
+  notes:
+    ratio_cv_pct: 0.0749
+    return_corr: 0.99129
+    score: 0.54
+    basis_p95_bps: 15.58
+    fill_probability: 0.063
+    basis14d_p95_bps: 15.58
+    basis14d_sig_bps: 7.38
+    halflife_h: 0.9
+    p95_minus_b_star_bps: -0.42
+  b_star_bps: 16.0
+  spread_okx_bps: 9.4
+  spread_lighter_bps: 1.6
+  entry_bps_p95: 15.58
+  exit_bps_p50: 4.61
+  band_override_bps: 18.4
+  entry_deadline_s: 5400
+  exit_deadline_s: 3600
+  max_hold_h: 4.0
 - symbol: MRVL
-  reasons:
-  - basis p95 8.6bps < b* 14.5bps (fees 7.0 + 2x half-spread 0.7/2.8) -> maker net
-    -5.9bps
-  ratio_cv_pct: 0.0456
-  return_corr: 0.9991
-  net_taker_bps: -8.55
+  unit_ratio: 0.99903976
+  sigma_1h_bps: 116.71
+  basis_sigma_bps: 4.57
+  band_bps: 10.0
+  session: us_equity
+  preferred_mode: dual_maker
+  notes:
+    ratio_cv_pct: 0.0487
+    return_corr: 0.9992
+    score: 0.11
+    basis_p95_bps: 9.62
+    fill_probability: 0.043
+    basis14d_p95_bps: 8.53
+    basis14d_sig_bps: 4.57
+    halflife_h: 1.05
+    p95_minus_b_star_bps: -0.67
+  b_star_bps: 9.2
+  spread_okx_bps: 0.7
+  spread_lighter_bps: 3.5
+  entry_bps_p95: 8.53
+  exit_bps_p50: 3.27
+  band_override_bps: 10.6
+  entry_deadline_s: 5400
+  exit_deadline_s: 3600
+  max_hold_h: 4.0
