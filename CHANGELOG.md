@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## v0.2.5 — 策略透镜：基差方向对称性 + 文档命令与宇宙一致（2026-11-08）
+
+- **只有一半行情会被交易（真 bug）**：`wave.decide` 的触发用 `abs(basis)`，但传给它的
+  `maker_net` 用的是**带符号**的 basis（`spread.py`），于是所有负基差（Lighter 便宜 →
+  多 Lighter / 空 OKX）都被 `min_edge_bps` 拒掉。改为 `maker_net = |basis| − 成本`，
+  并用一个"正负基差对称"的单测锁定。
+- `screening` 的 `to_symbol_entry` 补 `max_fee_bps_for_breakeven`（此前只在行对象里），
+  并加回归测试：一次 `arbtwin screen` 必须产出 wave 需要的全部字段，否则例行重扫会把
+  引擎悄悄降级成只观察。
+- 部署文档 3.1/3.3 的命令从不存在的 `SOXL,GRAM,VVV` 宇宙改为当前的 `COIN,SOXL`，
+  名义从 $400 改为 $12（Lighter 最小下单 $10 是硬地板）。
+
 ## v0.2.4 — 统计透镜 + 运维透镜的第一轮修正（2026-11-08）
 
 ### 收益口径（推翻旧结论）

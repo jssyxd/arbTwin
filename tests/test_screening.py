@@ -138,3 +138,20 @@ def test_session_classification():
     assert classify_session("1000PEPE") == "crypto"
     assert classify_session("AAPL") == "us_equity"
     assert classify_session("HYUNDAIUSD") == "us_equity"
+
+def test_screen_output_carries_the_wave_contract():
+    """A routine `arbtwin screen` must not produce a universe that silently
+    disables wave mode (engine needs entry_bps_p95 / exit_bps_p50)."""
+    offsets = {"WIDE": 0.0}
+    _hourly({"WIDE": 60.0})
+    okx = ScreenVenue("okx", offsets, maker=2.0, taker=5.0, size=20_000.0)
+    lt = ScreenVenue("lighter", offsets, maker=0.0, taker=0.0, size=20_000.0)
+    rows = screen_symbols(mk_cfg(), okx, lt, days=7, max_symbols=5)
+    payload = build_symbols_yaml(rows)
+    approved = payload["approved"]
+    assert approved, [r.reject_reasons for r in rows]
+    entry = approved[0]
+    for key in ("entry_bps_p95", "exit_bps_p50", "band_override_bps", "b_star_bps",
+                "capture_bps", "net_per_round_bps", "max_fee_bps_for_breakeven",
+                "entry_deadline_s", "exit_deadline_s", "max_hold_h"):
+        assert key in entry, key

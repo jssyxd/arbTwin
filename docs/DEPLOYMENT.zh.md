@@ -132,7 +132,7 @@ Lighter 权益/加密永续的资金费**长期为正**（14 天里 99–100% �
 | 总本金 | **$2,000** | 试验资金，两个所各一半 |
 | OKX（USDT） | $1,000 | 只做**多腿**与 USDT 保证金 |
 | Lighter（USDC） | $1,000 | 只做**空腿**与资金费收入 |
-| 每标的每腿名义 | **$400** | 1% 深度的 0.01%（远小于 10% 上限） |
+| 每标的每腿名义 | $12（$31 账户）/ $400（满仓账户） | Lighter `min_quote_amount = $10` 是硬地板 |
 | 同时持仓标的数 | **2**（v1 建议先 1 个） | `max_open_symbols: 2` |
 | 杠杆 | **3x**（两个所都设 cross 3x） | 保证金 $267/腿 → 两标的占用约 27% |
 | 单标的硬上限 | $500 名义 | `max_notional_usd: 500` |
@@ -234,8 +234,8 @@ cd /opt/arbTwin && . .venv/bin/activate
 export ARBTWIN_PROXY=            # VPS 直连则留空
 
 arbtwin doctor                                    # 两所可达 + 费率 + 机械参数 + universe 自检
-arbtwin screen --only SOXL,GRAM,VVV --days 14 \
-        --out config/symbols.starter.yaml          # 用最新 14 天重算证据
+arbtwin screen --only COIN,SOXL --days 30 \
+        --out config/symbols.starter.yaml          # 用最新 30 天重算证据（按 session 取分位）
 arbtwin monitor --iterations 20 --interval 5      # 观察 100 秒，确认矩阵/告警正常
 ARBTWIN_DRY_RUN=1 ARBTWIN_SYMBOLS=config/symbols.starter.yaml \
         arbtwin run --iterations 200 --interval 2  # 决策级 dry-run

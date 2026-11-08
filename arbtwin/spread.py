@@ -99,7 +99,12 @@ def compute_row(
     spread_cost_bps = 0.0
     if okx_book.spread_bps < 1e4 and lighter_book.spread_bps < 1e4:
         spread_cost_bps = okx_book.spread_bps + lighter_book.spread_bps
-    maker_net = basis - maker_fee - spread_cost_bps - funding_cost_bps
+    # The opportunity is the *size* of the dislocation, not its sign: wave mode
+    # triggers on abs(basis) and then picks the legs from the sign.  Using the
+    # signed basis here made every negative-basis dislocation (Lighter cheap ->
+    # long Lighter / short OKX) look unprofitable, so half the distribution was
+    # structurally untradeable.
+    maker_net = abs(basis) - maker_fee - spread_cost_bps - funding_cost_bps
     maker_band = entry_band_bps(sigma_basis_bps if sigma_basis_bps is not None else sigma_1h_bps,
                                 maker_fee, band_params)
     if band_override_bps > 0:

@@ -459,3 +459,18 @@ def test_lighter_equity_prefers_account_totals():
         '{"accounts":[{"assets":[{"symbol":"USDC","balance":"0.000000","margin_balance":"27.629041"}],'
         '"collateral":"27.629041","available_balance":"27.629041","total_asset_value":"27.629041"}]}')
     assert v.equity_usd() == pytest.approx(27.629041)
+
+
+def test_maker_edge_is_symmetric_in_basis_sign():
+    """trigger uses abs(basis); the edge must too, else only one side ever trades."""
+    fees = FeeBook(okx=FeeSchedule("okx", 2.0, 5.0), lighter=FeeSchedule("lighter", 0.0, 0.0))
+    rich = compute_row("X", mk_book("okx", "X", 100.0, 100.02, size=100),
+                       mk_book("lighter", "X", 100.14, 100.16, size=100), 1.0, fees,
+                       sigma_1h_bps=20.0, band_override_bps=12.0)
+    cheap = compute_row("X", mk_book("okx", "X", 100.0, 100.02, size=100),
+                        mk_book("lighter", "X", 99.86, 99.88, size=100), 1.0, fees,
+                        sigma_1h_bps=20.0, band_override_bps=12.0)
+    assert rich.basis_bps > 0 and cheap.basis_bps < 0
+    assert rich.maker_net_bps > 0 and cheap.maker_net_bps > 0
+    assert abs(rich.maker_net_bps - cheap.maker_net_bps) < 1.0
+    assert rich.action == "MAKER" and cheap.action == "MAKER"
