@@ -222,3 +222,29 @@ def test_cli_refuses_live_run_without_the_flag(monkeypatch):
 
     monkeypatch.setenv("ARBTWIN_DRY_RUN", "0")
     assert cli.main(["run", "--iterations", "1"]) == 2
+
+
+def test_max_hold_forces_a_passive_exit():
+    engine, okx, lt = mk_engine()
+    snap = engine.snapshot()
+    snap["rows"][0].action = "ENTER"
+    engine.execute_best(snap)
+    st = engine.states["AAPL"]
+    assert st.side != "flat"
+    st.entry_ts -= 5 * 3600          # older than max_hold_h (4h)
+    actions = engine.manage_risk(engine.snapshot())
+    queued = [a for a in actions if a.get("legs")]
+    assert queued and queued[0]["legs"] == 2 and not queued[0]["forced"]
+    assert "max hold" in queued[0]["exit_queued"]
+    # in dry-run the passive exit fills against the touch on the same poll
+    assert engine.states["AAPL"].side == "flat"
+
+
+def test_band_override_is_honoured():
+    cfg = mk_cfg()
+    cfg.symbols = [{"symbol": "AAPL", "unit_ratio": 1.0, "sigma_1h_bps": 10.0,
+                    "basis_sigma_bps": 2.0, "session": "crypto", "band_override_bps": 12.0}]
+    engine = TwinEngine(cfg, FakeVenue("okx", 100.0, 100.05), FakeVenue("lighter", 101.2, 101.25))
+    engine.load_universe()
+    row = engine.snapshot()["rows"][0]
+    assert row.entry_band_bps == pytest.approx(12.0)

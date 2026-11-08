@@ -321,3 +321,25 @@ def test_gate_uses_density_not_truncated_notional():
     assert v.metrics["depth_complete"] is False
     assert v.metrics["depth_density_usd_per_bps"] > 500
     assert v.allow, v.reasons
+
+
+# --------------------------------------------------------------------------- #
+# funding unit conventions (this bit was wrong once: 100x error)
+# --------------------------------------------------------------------------- #
+def test_lighter_funding_percent_per_hour_is_normalised():
+    from arbtwin.venues.lighter import LighterVenue
+
+    v = LighterVenue()                      # no network touched here
+    v._market_to_symbol[1] = "BTC"
+    v._stats["BTC"] = MarketStats("lighter", "BTC", 1, 1, oi_limit_usd=1.0e9)
+    v._ingest({"channel": "market_stats:1",
+               "market_stats": {"symbol": "BTC", "mark_price": "75904.5", "index_price": "75907.3",
+                                "current_funding_rate": "0.0012", "open_interest_usd": "330000000"}})
+    st = v._stats["BTC"]
+    assert st.funding_rate == pytest.approx(0.000012)          # 0.0012% / 100
+    assert st.funding_apr_pct == pytest.approx(10.512, rel=1e-3)     # ~10.5% APR
+
+
+def test_okx_funding_fraction_per_8h_annualises_sanely():
+    st = MarketStats("okx", "BTC", 1, 1, funding_rate=0.0001, funding_interval_h=8.0)
+    assert st.funding_apr_pct == pytest.approx(10.95, rel=1e-3)

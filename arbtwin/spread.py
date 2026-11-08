@@ -42,6 +42,7 @@ def compute_row(
     lead_type: str = "post_only",
     hedge_type: str = "ioc",
     funding_cost_bps: float = 0.0,
+    band_override_bps: float = 0.0,
     now: float | None = None,
 ) -> SpreadRow:
     import time as _time
@@ -81,6 +82,8 @@ def compute_row(
     lat_bps = latency_cost_bps(sigma_1h_bps, latency_ms)
     band = entry_band_bps(sigma_basis_bps if sigma_basis_bps is not None else sigma_1h_bps,
                           fee_bps, band_params)
+    if band_override_bps > 0:
+        band = band_override_bps
     net = exec_edge_bps - fee_bps - lat_bps - slippage_bps - funding_cost_bps
 
     # passive alternative: quote both venues post-only.  No taker fee, no
@@ -90,6 +93,8 @@ def compute_row(
     maker_net = basis - maker_fee - funding_cost_bps
     maker_band = entry_band_bps(sigma_basis_bps if sigma_basis_bps is not None else sigma_1h_bps,
                                 maker_fee, band_params)
+    if band_override_bps > 0:
+        maker_band = band_override_bps
 
     row = SpreadRow(
         symbol=symbol, ts=ts, unit_ratio=unit_ratio,

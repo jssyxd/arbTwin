@@ -172,7 +172,11 @@ class MarketStats:
     mid_price: float = 0.0
     oi_usd: float = 0.0
     oi_limit_usd: float = 0.0
-    funding_rate: float = 0.0          # per funding interval, as a fraction
+    # per funding interval, ALWAYS a fraction (0.0001 = 1bp).  Venues publish
+    # different conventions; adapters normalise on the way in:
+    #   OKX      : fraction per 8h          (fundingRate "0.0001")
+    #   Lighter  : percent   per 1h         (fundingRate "0.0012" = 0.0012%/h)
+    funding_rate: float = 0.0
     funding_interval_h: float = 8.0
     premium: float = 0.0               # (mark - index) / index as reported by venue
     ts: float = field(default_factory=time.time)

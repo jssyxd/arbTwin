@@ -55,6 +55,7 @@ class SymbolState:
     unit_ratio: float
     sigma_1h_bps: float
     basis_sigma_bps: float
+    band_override_bps: float
     spec_okx: MarketSpec
     spec_lighter: MarketSpec
     session: Session = field(default_factory=Session)
@@ -170,6 +171,7 @@ class TwinEngine:
                 unit_ratio=ratio,
                 sigma_1h_bps=float(entry.get("sigma_1h_bps") or 0.0),
                 basis_sigma_bps=float(entry.get("basis_sigma_bps") or 0.0),
+                band_override_bps=float(entry.get("band_override_bps") or 0.0),
                 spec_okx=okx_specs[symbol],
                 spec_lighter=lighter_specs[symbol],
                 session=session,
@@ -303,6 +305,7 @@ class TwinEngine:
                 self.cfg.band, sigma_basis_bps=st.basis_sigma_bps or None, latency_ms=latency_ms,
                 slippage_bps=self.cfg.limits.max_slippage_bps * gate.metrics.get("latency_multiplier", 1.0),
                 funding_cost_bps=funding_cost_bps,
+                band_override_bps=st.band_override_bps,
             )
             side = "cost" if carry > 0.5 else ("income" if carry < -0.5 else "flat")
             row.reasons.append(
@@ -495,7 +498,8 @@ class TwinEngine:
             legs = [q for q in self.maker_quotes if q.symbol == symbol]
             filled = [q for q in legs if q.filled]
             if len(filled) == len(legs) and len(legs) == 2:
-                self._open_from_maker(symbol, filled)
+                row = next((r for r in rows if r.symbol == symbol), None)
+                self._open_from_maker(symbol, filled, row.maker_net_bps if row else None)
                 self.maker_quotes = [q for q in self.maker_quotes if q.symbol != symbol]
             elif filled:
                 oldest_fill = min(q.fill_ts for q in filled)
@@ -523,7 +527,8 @@ class TwinEngine:
                                 other.symbol, other.order_id)
                     self.maker_quotes = [x for x in self.maker_quotes if x.symbol != symbol]
 
-    def _open_from_maker(self, symbol: str, fills: list[MakerQuote]) -> None:
+    def _open_from_maker(self, symbol: str, fills: list[MakerQuote],
+                         expected_net_bps: float | None = None) -> None:
         st = self.states[symbol]
         lt = next((q for q in fills if q.venue == LIGHTER), None)
         ox = next((q for q in fills if q.venue == OKX), None)
@@ -538,7 +543,7 @@ class TwinEngine:
         trade = {"ts": st.entry_ts, "symbol": symbol, "side": st.side, "mode": "dual_maker",
                  "lighter_px": lt.fill_px, "okx_px": ox.fill_px,
                  "qty_lighter": abs(st.qty_lighter), "qty_okx": abs(st.qty_okx),
-                 "expected_net_bps": None, "status": "open"}
+                 "expected_net_bps": expected_net_bps, "status": "open"}
         self.trades.append(trade)
         self._persist_trade(trade)
         self._alert("info", symbol, "dual-maker both legs filled — position opened")
@@ -566,8 +571,11 @@ class TwinEngine:
             # adverse single-leg move (the thing that actually hurts)
             drift_okx = abs(mark_okx - st.entry_okx) / st.entry_okx if st.entry_okx else 0.0
             drift_lt = abs(mark_lt - st.entry_lighter) / st.entry_lighter if st.entry_lighter else 0.0
+            held_h = (time.time() - st.entry_ts) / 3600.0 if st.entry_ts else 0.0
             reason = None
-            if max(drift_okx, drift_lt) >= limits.emergency_stop_loss_pct:
+            if held_h >= limits.max_hold_h:
+                reason = f"max hold {held_h:.1f}h reached (basis reverts fast; do not babysit)"
+            elif max(drift_okx, drift_lt) >= limits.emergency_stop_loss_pct:
                 reason = f"single-leg drift {max(drift_okx, drift_lt):.1%} >= {limits.emergency_stop_loss_pct:.0%}"
             elif pnl_bps >= exit_band_bps(row.entry_band_bps, self.cfg.band):
                 reason = f"basis captured {pnl_bps:.1f}bps >= exit band"

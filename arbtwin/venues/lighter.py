@@ -220,7 +220,8 @@ class LighterVenue(VenueAdapter):
                     mid_price=_f(ms.get("mid_price")),
                     oi_usd=_f(ms.get("open_interest_usd")),
                     oi_limit_usd=prev.oi_limit_usd if prev else 0.0,
-                    funding_rate=_f(ms.get("current_funding_rate") or ms.get("funding_rate")),
+                    # Lighter publishes PERCENT per hour; store fractions per interval
+                    funding_rate=(_f(ms.get("current_funding_rate") or ms.get("funding_rate"))) / 100.0,
                     funding_interval_h=self.funding_interval_h,
                     premium=_f(ms.get("premium")),
                     ts=time.time(),

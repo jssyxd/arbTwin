@@ -47,6 +47,8 @@ CRYPTO_HINTS = {
     "WLD", "PEPE", "SHIB", "BONK", "WIF", "FLOKI", "DOGS", "NOT", "TIA", "SEI", "INJ",
     "JUP", "PYTH", "JTO", "RAY", "HYPE", "TRUMP", "FARTCOIN", "VIRTUAL", "AI", "TAO",
     "RENDER", "FET", "AR", "STX", "KAS", "HBAR", "XLM", "ALGO", "ICP", "FTM", "S", "MOVE",
+    # 24/7 tokens that look like tickers and were once misclassified as equities
+    "GRAM", "VVV", "LIT", "PUMP", "SPX", "ASTER", "ZEC", "XMR", "DASH", "MELANIA",
 }
 
 
@@ -104,6 +106,12 @@ class ScreenRow:
 
 
 def classify_session(symbol: str, extra_crypto: Optional[set[str]] = None) -> str:
+    """crypto = 24/7 (anchor never freezes) vs us_equity = 09:30-16:00 ET.
+
+    Getting this wrong is expensive in one direction only: a 24/7 token labelled
+    as an equity gets its anchor *frozen* outside US hours, which silently turns
+    the engine into reduce-only for two thirds of the day.
+    """
     names = CRYPTO_HINTS | (extra_crypto or set())
     for prefix in ("1000", "1M"):
         if symbol.startswith(prefix) and symbol[len(prefix):] in names:
