@@ -150,8 +150,11 @@ class LighterVenue(VenueAdapter):
             cached = self._books.get(symbol)
         if cached and cached.valid(3.0):
             return cached
-        data = self._get("/api/v1/orderBookOrders",
-                         {"market_id": spec.market_ref, "limit": DEPTH_LEVELS})
+        data = http_json(f"{self.creds.base_url}/api/v1/orderBookOrders",
+                         params={"market_id": spec.market_ref, "limit": DEPTH_LEVELS},
+                         proxy=self.proxy, timeout=6.0, retries=1)
+        if data.get("code") not in (200, "200", None):
+            raise VenueError(f"lighter depth: {data.get('code')} {data.get('message')}")
         book = _parse_book(self.name, symbol, data)
         with self._lock:
             self._books[symbol] = book

@@ -29,6 +29,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+from concurrent.futures import ThreadPoolExecutor
+
 from .anchor import AnchorBook, Session
 from .band import entry_band_bps, exit_band_bps, max_position_usd, returns_from_closes, sigma_1h_bps
 from .calibration import calibrate, CalibrationResult
@@ -253,20 +255,39 @@ class TwinEngine:
         return merged
 
     # ------------------------------------------------------------------ snapshot
+    def _fetch(self, symbol: str) -> tuple[str, dict]:
+        """One symbol's four reads, run in a pool: a 12-symbol poll is 12 round trips."""
+        out: dict = {}
+        for name, fn in (("okx_book", self.okx.book), ("lt_book", self.lighter.book),
+                         ("okx_stats", self.okx.stats), ("lt_stats", self.lighter.stats)):
+            try:
+                out[name] = fn(symbol)
+            except Exception as exc:
+                out[name] = exc
+        return symbol, out
+
+    def _fetch_all(self) -> dict[str, dict]:
+        symbols = list(self.states)
+        if len(symbols) <= 2:
+            return dict(self._fetch(s) for s in symbols)
+        with ThreadPoolExecutor(max_workers=min(8, len(symbols)), thread_name_prefix="snap") as pool:
+            return {sym: data for sym, data in pool.map(self._fetch, symbols)}
+
     def snapshot(self) -> dict:
         if not self._loaded:
             self.load_universe()
         rows: list[SpreadRow] = []
         now = time.time()
+        raw = self._fetch_all()
         for symbol, st in self.states.items():
-            try:
-                okx_book = self.okx.book(symbol)
-                lt_book = self.lighter.book(symbol)
-                okx_stats = self.okx.stats(symbol)
-                lt_stats = self.lighter.stats(symbol)
-            except Exception as exc:
-                self._alert("warn", symbol, f"market data failed: {exc}")
+            data = raw.get(symbol) or {}
+            failed = [k for k, v in data.items() if isinstance(v, Exception)]
+            if failed or len(data) < 4:
+                reason = data.get(failed[0]) if failed else "no data"
+                self._alert("warn", symbol, f"market data failed: {reason}")
                 continue
+            okx_book, lt_book = data["okx_book"], data["lt_book"]
+            okx_stats, lt_stats = data["okx_stats"], data["lt_stats"]
             gate = self._gate_symbol(st, okx_book, lt_book, okx_stats, lt_stats)
             st.last_gate = gate
 

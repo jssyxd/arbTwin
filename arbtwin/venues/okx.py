@@ -171,8 +171,11 @@ class OkxVenue(VenueAdapter):
         spec = self._by_symbol.get(symbol) or self.specs([symbol]).get(symbol)
         if not spec:
             raise VenueError(f"okx: unknown symbol {symbol}")
-        data = self._get("/api/v5/market/books",
-                         {"instId": spec.market_ref, "sz": levels or DEPTH_LEVELS})
+        data = http_json(f"{self.creds.base_url}/api/v5/market/books",
+                         params={"instId": spec.market_ref, "sz": levels or DEPTH_LEVELS},
+                         proxy=self.proxy, timeout=6.0, retries=1)
+        if data.get("code") not in ("0", 0, None):
+            raise VenueError(f"okx books: {data.get('code')} {data.get('msg')}")
         item = data["data"][0]
         book = Book(self.name, symbol,
                     bids=[(float(p), float(s)) for p, s, *_ in item["bids"]],
