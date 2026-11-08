@@ -120,6 +120,7 @@ class EngineLimits:
 
     max_margin_usage_pct: float = 0.35       # per venue, of that venue's own equity
     max_notional_usd: float = 3000.0         # per symbol across both legs
+    target_leverage: float = 3.0             # our own leverage, NOT the venue maximum
     min_round_notional_usd: float = 25.0     # below this a round is not worth the orders
     max_open_symbols: int = 4
     max_unhedged_notional_usd: float = 150.0
@@ -162,6 +163,9 @@ class AppConfig:
     # "maker_basis" = the original two-mode engine; "wave" = one-round-at-a-time
     # state machine (arbtwin/wave.py) that never takes liquidity except on a stop.
     strategy: str = "maker_basis"
+    # "positions" -> live fills come from venue position deltas (required for live);
+    # empty/dry-run keeps the book-crossing proxy.
+    fill_source: str = ""
     dry_run: bool = True
     alert_webhook: str = ""
     poll_interval_ms: int = 250
@@ -177,6 +181,9 @@ class AppConfig:
         for key, value in (risk.get("limits") or {}).items():
             if hasattr(limits, key):
                 setattr(limits, key, value)
+        # env overrides for the live box (a $59 account must not size against 50x)
+        limits.max_notional_usd = _env_float("ARBTWIN_MAX_NOTIONAL", limits.max_notional_usd)
+        limits.target_leverage = _env_float("ARBTWIN_TARGET_LEVERAGE", limits.target_leverage)
         band = BandParams()
         for key, value in (risk.get("bands") or {}).items():
             if hasattr(band, key):
@@ -184,6 +191,7 @@ class AppConfig:
 
         cfg = cls(
             strategy=str(risk.get("strategy") or "maker_basis"),
+            fill_source=_env("ARBTWIN_FILL_SOURCE", ""),
             okx=OkxCredentials.from_env(),
             lighter=LighterCredentials.from_env(),
             limits=limits,

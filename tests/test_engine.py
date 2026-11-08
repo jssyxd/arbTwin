@@ -399,5 +399,36 @@ def test_live_mode_is_refused_until_fill_reconciliation_exists():
     venue order-state path exists, starting live must fail loudly, not invent PnL."""
     engine, _okx, _lt = mk_engine()
     engine.cfg.dry_run = False
-    with pytest.raises(RuntimeError, match="fills are inferred"):
+    with pytest.raises(RuntimeError, match="ARBTWIN_FILL_SOURCE"):
         engine.run_forever(iterations=1)
+
+
+def test_position_reconciliation_drives_a_live_round(tmp_path):
+    """Live fills come from venue position deltas, not from the book."""
+    from arbtwin.reconcile import PositionLedger
+
+    engine, okx, lt = mk_engine()
+    engine.cfg.dry_run = False
+    engine.cfg.strategy = "wave"
+    engine.load_universe()
+    engine.cfg.fill_source = "positions"
+    # a fresh ledger on a temp path so the test is hermetic
+    engine.ledger = PositionLedger(str(tmp_path / "positions.json"))
+    snap = engine.snapshot()
+    engine.wave_step(snap)
+    rnd = engine.wave.round_for("AAPL")
+    assert rnd.state.value == "entry_quoting"
+
+    # the venue reports a short on Lighter (sell leg filled) -> partial
+    class P:
+        def __init__(self, venue, symbol, qty, avg):
+            self.venue, self.symbol, self.qty_base, self.avg_entry = venue, symbol, qty, avg
+    engine.broker.positions = lambda: {"lighter:AAPL": P("lighter", "AAPL", -30.0, 101.0)}
+    engine._reconcile_positions()
+    assert rnd.state.value == "entry_partial"
+
+    # the OKX hedge lands -> hedged
+    engine.broker.positions = lambda: {"lighter:AAPL": P("lighter", "AAPL", -30.0, 101.0),
+                                       "okx:AAPL": P("okx", "AAPL", 30.0, 100.0)}
+    engine._reconcile_positions()
+    assert rnd.state.value == "hedged"

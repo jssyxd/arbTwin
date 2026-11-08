@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -43,6 +44,7 @@ from .mechanics import MechanicsBook, build_mechanics, evaluate_venue, latency_c
 from .models import (LIGHTER, OKX, Book, ExecutionPlan, Fill, GateVerdict, MarketSpec,
                      MarketStats, OrderRequest, SpreadRow, VenuePosition)
 from .spread import build_plan, compute_row, summarise
+from .reconcile import FillEvent, PositionLedger
 from .wave import RoundState, WaveParams
 from .wavetrader import WaveTrader
 from .venues.lighter import LighterVenue
@@ -151,6 +153,7 @@ class TwinEngine:
         self.exits = ExitQueue()
         self.maker_quotes: list[MakerQuote] = []
         self.wave: Optional[WaveTrader] = None
+        self.ledger = PositionLedger(str(Path(cfg.state_dir) / "positions.json"))
         # Positions that exist on a venue but have no in-memory round.  They appear
         # after a restart / crash / OOM: the process has no memory of the round,
         # so without this the engine believes FLAT and quotes a *second* entry on
@@ -415,9 +418,11 @@ class TwinEngine:
         okx_book = self.okx.book(st.symbol)
         lt_book = self.lighter.book(st.symbol)
         size_factor = st.last_gate.metrics.get("size_factor", 1.0) if st.last_gate else 1.0
-        notional_okx = max_position_usd(okx_eq, st.spec_okx.max_leverage, limits.max_margin_usage_pct,
+        notional_okx = max_position_usd(okx_eq, min(st.spec_okx.max_leverage, limits.target_leverage),
+                                       limits.max_margin_usage_pct,
                                        okx_book.depth_usd(100.0), hard_cap_usd=limits.max_notional_usd)
-        notional_lt = max_position_usd(lt_eq, st.spec_lighter.max_leverage, limits.max_margin_usage_pct,
+        notional_lt = max_position_usd(lt_eq, min(st.spec_lighter.max_leverage, limits.target_leverage),
+                                       limits.max_margin_usage_pct,
                                        lt_book.depth_usd(100.0), hard_cap_usd=limits.max_notional_usd)
         notional = min(notional_okx, notional_lt) * size_factor
         if notional < 25.0:
@@ -660,9 +665,11 @@ class TwinEngine:
         okx_book = self.okx.book(symbol)
         lt_book = self.lighter.book(symbol)
         size_factor = st.last_gate.metrics.get("size_factor", 1.0) if st.last_gate else 1.0
-        a = max_position_usd(okx_eq, st.spec_okx.max_leverage, limits.max_margin_usage_pct,
+        lev_okx = min(st.spec_okx.max_leverage, limits.target_leverage)
+        lev_lt = min(st.spec_lighter.max_leverage, limits.target_leverage)
+        a = max_position_usd(okx_eq, lev_okx, limits.max_margin_usage_pct,
                             okx_book.depth_usd(100.0), hard_cap_usd=limits.max_notional_usd)
-        b = max_position_usd(lt_eq, st.spec_lighter.max_leverage, limits.max_margin_usage_pct,
+        b = max_position_usd(lt_eq, lev_lt, limits.max_margin_usage_pct,
                             lt_book.depth_usd(100.0), hard_cap_usd=limits.max_notional_usd)
         notional = max(0.0, min(a, b) * size_factor)
         # Lighter rejects anything below its `min_quote_amount` ($10 on every
@@ -704,7 +711,10 @@ class TwinEngine:
             except Exception as exc:
                 self._alert("warn", row.symbol, f"wave: book unavailable: {exc}")
                 continue
-            fills = self.wave.poll_fills(row.symbol, okx_book, lt_book)
+            if self.cfg.dry_run:
+                fills = self.wave.poll_fills(row.symbol, okx_book, lt_book)
+            else:
+                fills = []          # filled by _reconcile_positions() before this step
             if holding:
                 notional = 0.0        # not consumed by ENTRY_PARTIAL/HEDGED/EXIT states
             else:
@@ -825,6 +835,8 @@ class TwinEngine:
     def run_once(self) -> dict:
         snap = self.snapshot()
         self._update_orphans(snap)
+        if not self.cfg.dry_run and self.wave is not None:
+            self._reconcile_positions()
         if self.cfg.strategy == "wave":
             executed = self.wave_step(snap)
             risk_actions = []
@@ -851,17 +863,77 @@ class TwinEngine:
         return payload
 
     def _assert_live_is_safe(self) -> None:
-        """Live trading needs venue fill reporting; the book-crossing proxy is dry-run only."""
+        """Live is allowed only when fills come from the venue, not from the book.
+
+        `ARBTWIN_FILL_SOURCE=positions` switches the wave round to position-delta
+        reconciliation (arbtwin/reconcile.py).  Anything else keeps live disabled:
+        a live run whose fills are inferred from book crossings invents PnL and
+        desynchronises the round from the account.
+        """
         if self.cfg.dry_run:
             return
+        if getattr(self.cfg, "fill_source", "") == "positions":
+            if not self.cfg.okx.has_private:
+                raise RuntimeError("live needs OKX credentials (API key/secret/passphrase)")
+            if not self.cfg.lighter.has_private:
+                raise RuntimeError("live needs Lighter API key index + private key + account index")
+            return
         raise RuntimeError(
-            "live trading is disabled in this build: fills are inferred from book crossings "
-            "(dry-run only) and there is no order-state reconciliation yet. "
-            "Run with ARBTWIN_DRY_RUN=1 until venue fill polling lands."
+            "live trading needs fills from the venue: set ARBTWIN_FILL_SOURCE=positions "
+            "(position-delta reconciliation). The book-crossing proxy is dry-run only."
         )
+
+    def _cancel_stale_orders(self) -> None:
+        """A restart must not leave yesterday's GTC orders live on the venue."""
+        if self.cfg.dry_run:
+            return
+        for symbol in self.states:
+            for venue in (self.okx, self.lighter):
+                try:
+                    n = venue.cancel_all(symbol)
+                    if n:
+                        self._alert("warn", symbol, f"cancelled {n} stale order(s) on {venue.name}")
+                except Exception as exc:
+                    self._alert("warn", symbol, f"cancel_all on {venue.name} failed: {exc}")
+
+    def _reconcile_positions(self) -> list[FillEvent]:
+        """Turn venue position deltas into wave fills (live only)."""
+        if self.wave is None:
+            return []
+        try:
+            positions = self.broker.positions()
+        except Exception as exc:
+            self._alert("warn", "engine", f"position poll failed: {exc}")
+            return []
+        events = self.ledger.reconcile(positions)
+        for ev in events:
+            rnd = self.wave.rounds.get(ev.symbol)
+            if rnd is None:
+                self._alert("warn", ev.symbol,
+                            f"position delta without a round: {ev.venue} {ev.side} {ev.qty_base:.6f}")
+                continue
+            if ev.px <= 0:
+                try:
+                    book = self.okx.book(ev.symbol) if ev.venue == OKX else self.lighter.book(ev.symbol)
+                    ev.px = book.mid
+                except Exception:
+                    pass
+            from . import wave as _w
+            _w.on_fill(rnd, ev.venue, ev.qty_base, ev.px)
+            self._alert("info", ev.symbol,
+                        f"fill reconciled: {ev.venue} {ev.side} {ev.qty_base:.6f} @ {ev.px:.6f} "
+                        f"-> {rnd.state.value}")
+        return events
 
     def run_forever(self, iterations: int = 0, interval_s: float | None = None) -> None:
         self._assert_live_is_safe()
+        self._cancel_stale_orders()
+        # adopt whatever the venues already hold: those units are not fills of
+        # any round we are about to run.
+        try:
+            self.ledger.seed(self.broker.positions())
+        except Exception as exc:
+            self._alert("warn", "engine", f"position seed failed: {exc}")
         interval = (interval_s if interval_s is not None else self.cfg.poll_interval_ms / 1000.0)
         # rate-limit floor: each symbol costs ~2 REST calls per poll and
         # `max_open_symbols` is not the universe size — scale, never hammer.
