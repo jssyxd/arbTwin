@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the arbTwin hourly report every hour
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

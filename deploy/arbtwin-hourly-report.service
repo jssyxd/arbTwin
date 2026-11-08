@@ -1,0 +1,11 @@
+[Unit]
+Description=arbTwin hourly trading report -> Telegram (via hermes send)
+After=arbtwin.service network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/arbtwin
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/bash -lc 'set -a; . /opt/arbtwin/.env; set +a; /opt/arbtwin/.venv/bin/python scripts/hourly_report.py --hours 1 --send'
+TimeoutStartSec=180
