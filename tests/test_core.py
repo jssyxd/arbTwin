@@ -1,0 +1,279 @@
+"""Unit tests for the pure layers: no network, no credentials, no clock surprises."""
+
+from __future__ import annotations
+
+import math
+
+import pytest
+
+from arbtwin.band import entry_band_bps, exit_band_bps, max_position_usd, sigma_1h_bps
+from arbtwin.calibration import calibrate, percentile, unit_ratio_for
+from arbtwin.config import BandParams
+from arbtwin.exitqueue import ExitQueue, ExitTicket
+from arbtwin.fees import FeeBook, FeeSchedule, build_fee_book
+from arbtwin.issuer_risk import build_card
+from arbtwin.manipulation import profile
+from arbtwin.mechanics import MechanicsBook, VenueMechanics, cascade_proxy, evaluate_venue, latency_cost_bps
+from arbtwin.models import Book, MarketSpec, MarketStats
+from arbtwin.spread import build_plan, compute_row
+
+
+# --------------------------------------------------------------------------- #
+# fixtures
+# --------------------------------------------------------------------------- #
+def mk_book(venue: str, symbol: str, bid: float, ask: float, size: float = 10.0,
+            levels: int = 5, step_bps: float = 5.0) -> Book:
+    bids = [(bid * (1 - i * step_bps / 1e4), size) for i in range(levels)]
+    asks = [(ask * (1 + i * step_bps / 1e4), size) for i in range(levels)]
+    return Book(venue, symbol, bids=bids, asks=asks)
+
+
+def mk_spec(venue: str, symbol: str, maker: float = 0.0, taker: float = 0.0,
+            imf: float = 0.05, oi_limit: float = 1e7) -> MarketSpec:
+    return MarketSpec(venue=venue, symbol=symbol, market_ref="1", price_decimals=2, size_decimals=3,
+                      min_base=0.001, min_quote=10.0, maker_fee_bps=maker, taker_fee_bps=taker,
+                      initial_margin_frac=imf, oi_limit_usd=oi_limit, max_leverage=1 / imf)
+
+
+def mk_stats(venue: str, symbol: str, mark: float = 100.0, index: float = 100.0,
+             oi_usd: float = 1e5, oi_limit: float = 1e7, funding: float = 0.0,
+             interval_h: float = 8.0) -> MarketStats:
+    return MarketStats(venue=venue, symbol=symbol, mark_price=mark, index_price=index,
+                       oi_usd=oi_usd, oi_limit_usd=oi_limit, funding_rate=funding,
+                       funding_interval_h=interval_h)
+
+
+# --------------------------------------------------------------------------- #
+# calibration: the ANTHROPIC lesson
+# --------------------------------------------------------------------------- #
+def test_calibration_accepts_same_instrument():
+    okx = {i: 100.0 * (1 + 0.001 * i) for i in range(100)}
+    lt = {i: okx[i] * 1.0003 for i in range(100)}
+    res = calibrate("AAPL", okx, lt)
+    assert res.verdict == "same_instrument"
+    assert res.tradable and abs(res.ratio - 1) < 0.01
+
+
+def test_calibration_accepts_stable_renominated_contract():
+    okx = {i: 0.00002 * (1 + 0.002 * i) for i in range(100)}
+    lt = {i: okx[i] * 1000.0 for i in range(100)}
+    res = calibrate("1000SHIB", okx, lt)
+    assert res.verdict == "ratio_stable"
+    assert res.ratio == pytest.approx(1000.0, rel=1e-6)
+
+
+def test_calibration_rejects_drifting_premium():
+    # Lighter walks from 10.0x to 11.5x while OKX moves independently: two products
+    okx = {i: 100.0 * (1 + 0.01 * math.sin(i / 3)) for i in range(120)}
+    lt = {i: okx[i] * (10.0 + 0.012 * i) for i in range(120)}
+    res = calibrate("ANTHROPIC", okx, lt)
+    assert res.verdict == "reject_divergent"
+    assert res.cv > 0.005
+
+
+def test_calibration_needs_enough_overlap():
+    res = calibrate("X", {1: 1.0, 2: 1.0}, {1: 1.0, 2: 1.0})
+    assert res.verdict == "insufficient_data"
+    assert not res.tradable
+
+
+def test_unit_ratio_override_wins():
+    assert unit_ratio_for({"unit_ratio_override": 12.7}, None) == 12.7
+    assert unit_ratio_for({}, None) == 0.0
+
+
+# --------------------------------------------------------------------------- #
+# band: degenerate branches
+# --------------------------------------------------------------------------- #
+def test_band_degenerate_zero_vol_is_fee_driven():
+    b = entry_band_bps(0.5, fee_bps=20.0, params=BandParams())
+    assert b == pytest.approx(30.0)          # 20 * 1.5
+
+
+def test_band_scales_with_vol_and_is_capped():
+    low = entry_band_bps(10.0, fee_bps=10.0)
+    high = entry_band_bps(60.0, fee_bps=10.0)
+    assert high > low
+    assert entry_band_bps(10_000.0, fee_bps=10.0) <= BandParams().cap_bps
+
+
+def test_exit_band_is_a_fraction_of_entry():
+    assert exit_band_bps(100.0) < 100.0
+    assert exit_band_bps(100.0) >= BandParams().floor_bps * 0.5
+
+
+def test_sigma_and_position_sizing():
+    rets = [0.001, -0.001, 0.002, -0.002]
+    assert sigma_1h_bps(rets) == pytest.approx(15.81, rel=1e-3)
+    # margin budget binds first
+    assert max_position_usd(1000, 10, 0.35, 1e9) == pytest.approx(min(3500, 3000))
+    # depth binds
+    assert max_position_usd(1e6, 10, 0.35, 1000, depth_pct=0.1) == pytest.approx(100)
+
+
+# --------------------------------------------------------------------------- #
+# fees
+# --------------------------------------------------------------------------- #
+def test_fee_model_order_type_and_incentive():
+    s = FeeSchedule("lighter", maker_bps=0.0, taker_bps=0.0, incentive_value_bps=1.5)
+    assert s.effective_bps("post_only") == pytest.approx(-1.5)
+    s2 = FeeSchedule("okx", maker_bps=2.0, taker_bps=5.0, overrides={"ioc": 6.0})
+    assert s2.effective_bps("ioc") == 6.0
+    assert s2.hurdle_bps("post_only", 2.0) == pytest.approx(4.0)
+
+
+def test_round_trip_cost_is_conservative():
+    book = FeeBook(okx=FeeSchedule("okx", 2.0, 5.0), lighter=FeeSchedule("lighter", 0.0, 0.0))
+    # open: lighter post-only 0 + okx ioc 5 = 5
+    # close: okx exit max(5, 2)=5 + lighter passive exit max(0, 0)=0 -> 5
+    assert book.round_trip_bps("lighter", "okx") == pytest.approx(10.0)
+
+
+def test_build_fee_book_from_config():
+    cfg = {"venues": {"okx": {"fee": {"maker_bps": 1.0, "taker_bps": 3.0}},
+                      "lighter": {"fee": {"maker_bps": 0.0, "taker_bps": 0.0}}}}
+    book = build_fee_book(cfg)
+    assert book.okx.taker_bps == 3.0 and book.lighter.maker_bps == 0.0
+
+
+# --------------------------------------------------------------------------- #
+# mechanics gates
+# --------------------------------------------------------------------------- #
+def test_mechanics_blocks_thin_book_and_stale_mark_window():
+    mech = VenueMechanics("lighter", mark_window_s=300, min_depth_usd_1pct=50_000)
+    book = mk_book("lighter", "AAPL", 100, 100.1, size=1.0)      # tiny book
+    stats = mk_stats("lighter", "AAPL")
+    v = evaluate_venue(mech, stats, book)
+    assert not v.allow
+    assert any("depth" in r for r in v.reasons)
+
+
+def test_mechanics_blocks_near_mark_cap():
+    mech = VenueMechanics("x", mark_cap_px=110.0, min_depth_usd_1pct=100)
+    book = mk_book("x", "S", 105, 105.1, size=1000)
+    stats = mk_stats("x", "S", mark=105, index=105)
+    v = evaluate_venue(mech, stats, book)
+    assert not v.allow
+    assert any("cap" in r for r in v.reasons)
+
+
+def test_cascade_proxy_flags_oi_vs_depth():
+    book = mk_book("x", "S", 100, 100.1, size=1)      # ~$500 of depth
+    stats = mk_stats("x", "S", oi_usd=1e6)
+    assert cascade_proxy(stats, book) > 6
+
+
+def test_latency_cost_is_diffusive():
+    assert latency_cost_bps(0, 300) == 0.0
+    assert latency_cost_bps(50, 0) == 0.0
+    assert latency_cost_bps(50, 3_600_000) == pytest.approx(50.0)
+    assert latency_cost_bps(50, 300) < latency_cost_bps(50, 3000)
+
+
+def test_mechanics_blocks_liq_too_close():
+    mech = VenueMechanics("okx", min_depth_usd_1pct=100)
+    book = mk_book("okx", "S", 100, 100.1, size=1000)
+    stats = mk_stats("okx", "S")
+    from arbtwin.models import VenuePosition
+
+    pos = VenuePosition("okx", "S", qty_base=1.0, avg_entry=100.0, liquidation_price=90.0)
+    limits = type("L", (), {"min_liq_distance_pct": 0.18, "max_book_age_s": 5.0})()
+    v = evaluate_venue(mech, stats, book, pos, limits)
+    assert not v.allow
+
+
+# --------------------------------------------------------------------------- #
+# spread matrix
+# --------------------------------------------------------------------------- #
+def test_row_direction_and_edge_sign():
+    okx_book = mk_book("okx", "AAPL", 100.0, 100.05, size=100)
+    lt_book = mk_book("lighter", "AAPL", 100.5, 100.55, size=100)   # Lighter rich by ~45bps
+    fees = FeeBook(okx=FeeSchedule("okx", 2.0, 5.0), lighter=FeeSchedule("lighter", 0.0, 0.0))
+    row = compute_row("AAPL", okx_book, lt_book, 1.0, fees, sigma_1h_bps=20.0, latency_ms=300,
+                      slippage_bps=1.0)
+    assert row.basis_bps > 0
+    assert row.direction == "long_okx_short_lighter"
+    assert row.executable_edge_bps > 0
+    assert row.net_edge_bps == pytest.approx(
+        row.executable_edge_bps - row.fee_bps - row.latency_cost_bps - row.slippage_bps)
+
+
+def test_row_respects_unit_ratio():
+    okx_book = mk_book("okx", "SHIB", 0.00002, 0.0000201, size=1e9)
+    lt_book = mk_book("lighter", "1000SHIB", 0.02, 0.0201, size=1e6)   # 1000x denom
+    fees = FeeBook(okx=FeeSchedule("okx", 2.0, 5.0), lighter=FeeSchedule("lighter", 0.0, 0.0))
+    row = compute_row("1000SHIB", okx_book, lt_book, 1000.0, fees, sigma_1h_bps=20.0)
+    assert abs(row.basis_bps) < 5      # normalised, so no fake 9900 bps premium
+
+
+def test_row_blocks_without_ratio():
+    fees = FeeBook(okx=FeeSchedule("okx", 2.0, 5.0), lighter=FeeSchedule("lighter", 0.0, 0.0))
+    row = compute_row("X", mk_book("okx", "X", 1, 1.1), mk_book("lighter", "X", 1, 1.1), 0.0, fees, 10.0)
+    assert row.action == "BLOCK"
+
+
+def test_plan_legs_are_opposite_and_sized_by_ratio():
+    okx_book = mk_book("okx", "AAPL", 100.0, 100.05, size=100)
+    lt_book = mk_book("lighter", "AAPL", 100.5, 100.55, size=100)
+    fees = FeeBook(okx=FeeSchedule("okx", 2.0, 5.0), lighter=FeeSchedule("lighter", 0.0, 0.0))
+    row = compute_row("AAPL", okx_book, lt_book, 1.0, fees, 20.0)
+    plan = build_plan(row, okx_book, lt_book, 1.0, notional_usd=1000)
+    assert plan.leading.venue == "lighter" and plan.hedge.venue == "okx"
+    assert plan.leading.side != plan.hedge.side
+    assert plan.leading.notional_usd == pytest.approx(1000, rel=0.01)
+    assert plan.hedge.notional_usd == pytest.approx(1000, rel=0.01)
+
+
+# --------------------------------------------------------------------------- #
+# manipulation / issuer risk / exits
+# --------------------------------------------------------------------------- #
+def test_thin_book_raises_band_multiplier():
+    thin = mk_book("lighter", "S", 100, 100.1, size=1)
+    prof = profile(thin, "S", "lighter")
+    assert prof.thin_reference
+    assert prof.band_multiplier > 1
+
+
+def test_deep_book_is_not_flagged():
+    deep = mk_book("lighter", "S", 100, 100.1, size=10_000)
+    prof = profile(deep, "S", "lighter")
+    assert not prof.thin_reference
+    assert prof.band_multiplier == 1.0
+
+
+def test_issuer_card_hard_flag_vetoes():
+    spec = mk_spec("lighter", "X")
+    stats = mk_stats("lighter", "X")
+    card = build_card("X", [spec], [stats], {"X": {"flags": ["pre_ipo_claim"]}})
+    assert not card.allow
+    assert card.size_factor == 0.0
+
+
+def test_issuer_card_soft_flags_shrink_size():
+    spec = mk_spec("lighter", "X", imf=0.2)
+    stats = mk_stats("lighter", "X", funding=0.002, interval_h=1.0)   # ~1752% APR
+    card = build_card("X", [spec], [stats], {"X": {"flags": ["thin_float"]}})
+    assert card.allow
+    assert 0.0 < card.size_factor < 1.0
+
+
+def test_exit_queue_is_patient_then_escalates():
+    q = ExitQueue()
+    t = q.add(ExitTicket(symbol="AAPL", venue="lighter", side="sell", qty_base=1.0, remaining=1.0,
+                         deadline_s=900))
+    book = mk_book("lighter", "AAPL", 100.0, 100.5)
+    order = q.plan(t, book)
+    assert order.tif == "post_only" and order.side == "sell" and order.px <= 100.0
+    t.created_at -= 880          # nearly out of patience
+    escalated = q.plan(t, book)
+    assert escalated.tif == "ioc"
+    t.forced = True
+    forced = q.plan(t, book)
+    assert forced.order_type == "market"
+
+
+def test_exit_queue_accumulates_same_ticket():
+    q = ExitQueue()
+    a = q.add(ExitTicket(symbol="S", venue="okx", side="buy", qty_base=1, remaining=1))
+    b = q.add(ExitTicket(symbol="S", venue="okx", side="buy", qty_base=2, remaining=2))
+    assert a is b and a.remaining == 3

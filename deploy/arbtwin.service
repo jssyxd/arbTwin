@@ -1,0 +1,24 @@
+[Unit]
+Description=arbTwin OKX<->Lighter basis engine
+Documentation=https://github.com/jssyxd/arbTwin
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=arbtwin
+Group=arbtwin
+WorkingDirectory=/opt/arbtwin
+EnvironmentFile=/opt/arbtwin/.env
+# 先用 dry-run 跑够样本，确认 decision stream 无误后改成 0
+Environment=ARBTWIN_DRY_RUN=1
+ExecStart=/opt/arbtwin/.venv/bin/arbtwin run --interval 1
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/arbtwin/engine.log
+StandardError=append:/var/log/arbtwin/engine.log
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,58 @@
+# ---------------------------------------------------------------------------
+# arbTwin venues
+#
+# Numbers here are DEFAULTS verified against each venue's public API/docs on
+# 2026-11-08.  Re-verify before deploying with real size:
+#   OKX     : GET /api/v5/public/instruments?instType=SWAP      (ctVal, lever, tickSz)
+#   Lighter : GET /api/v1/orderBookDetails                      (fees, margin, OI limit)
+#
+# fee.bps are in basis points per side.
+# mechanics.* feed the hard gates in arbtwin/mechanics.py.
+# ---------------------------------------------------------------------------
+venues:
+  okx:
+    fee:
+      maker_bps: 2.0          # Lv1 maker, ANTHROPIC/NVDA/AAPL-USDT-SWAP etc.
+      taker_bps: 5.0          # Lv1 taker
+      maker_rebate_bps: 0.0
+      incentive_value_bps: 0.0   # volume-program value; raise during an incentive epoch
+      overrides:
+        post_only: 2.0
+        ioc: 5.0
+    mechanics:
+      funding_interval_h: 8
+      mark_window_s: 0        # mark off an index basket, effectively continuous
+      mark_cap_px: 0
+      mark_floor_px: 0
+      taker_speed_bump_ms: 20
+      post_only_speed_bump_ms: 0
+      oi_utilization_max: 0.50  # OKX publishes no OI limit -> depth + move cost do the work
+      min_move_cost_usd: 50000.0
+      cascade_proxy_monitor: 100.0
+      mark_divergence_max_bps: 30.0
+      min_depth_usd_1pct: 20000.0
+
+  lighter:
+    fee:
+      maker_bps: 0.0          # verified 0.0000 on every perp market, 2026-11-08
+      taker_bps: 0.0
+      maker_rebate_bps: 0.0
+      incentive_value_bps: 0.0
+      overrides:
+        post_only: 0.0
+        ioc: 0.0
+    mechanics:
+      funding_interval_h: 1   # hourly funding (funding_timestamp is 1h apart)
+      # Conservative: Lighter marks off a smoothed index/premium, and we do not
+      # get the exact window from the API.  300s is the number we plan against;
+      # never rest an order longer than mark_window_s / 2.
+      mark_window_s: 300
+      mark_cap_px: 0          # set per symbol in config/risk.yaml when a venue publishes a cap
+      mark_floor_px: 0
+      taker_speed_bump_ms: 300  # Standard tier taker bump; post-only has none
+      post_only_speed_bump_ms: 0
+      oi_utilization_max: 0.25
+      min_move_cost_usd: 50000.0
+      cascade_proxy_monitor: 50.0
+      mark_divergence_max_bps: 40.0
+      min_depth_usd_1pct: 20000.0
