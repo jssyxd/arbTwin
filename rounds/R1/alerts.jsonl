@@ -1,0 +1,6 @@
+{"ts": 1794248744.4352074, "level": "warn", "scope": "CRCL", "message": "sizing $12.00 below the round floor $25.00 (equity okx=10000.00/lighter=10000.00)"}
+{"ts": 1794248755.8284693, "level": "warn", "scope": "CRCL", "message": "sizing $12.00 below the round floor $25.00 (equity okx=10000.00/lighter=10000.00)"}
+{"ts": 1794248768.334811, "level": "warn", "scope": "CRCL", "message": "sizing $12.00 below the round floor $25.00 (equity okx=10000.00/lighter=10000.00)"}
+{"ts": 1794248799.0494828, "level": "warn", "scope": "CRCL", "message": "sizing $12.00 below the round floor $25.00 (equity okx=10000.00/lighter=10000.00)"}
+{"ts": 1794248816.733779, "level": "warn", "scope": "CRCL", "message": "sizing $12.00 below the round floor $25.00 (equity okx=10000.00/lighter=10000.00)"}
+{"ts": 1794248838.079701, "level": "info", "scope": "engine", "message": "startup position check: flat (no open positions)"}

@@ -1,0 +1,31 @@
+{
+  "path": "state/snapshot.jsonl",
+  "records": 15,
+  "span_s": 174.01973843574524,
+  "stale_s": 9.251703977584839,
+  "max_gap_s": 30.0,
+  "symbols": {
+    "CRCL": {
+      "n": 15,
+      "first_ts": 1794248391.5081265,
+      "last_ts": 1794248565.527865,
+      "max_gap_s": 20.77,
+      "basis_p50": 4.38,
+      "basis_p95": 6.67,
+      "okx_spread_p50": 1.49,
+      "lt_spread_p50": 1.05,
+      "sessions": {
+        "rth": {
+          "n": 15,
+          "p50": 4.38,
+          "p95": 6.67
+        }
+      },
+      "actions": {
+        "WAIT": 14,
+        "MAKER": 1
+      }
+    }
+  },
+  "fails": []
+}
