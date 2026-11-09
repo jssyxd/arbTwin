@@ -25,7 +25,7 @@ from validation.fill.fill_model import (Capture, DEFAULT_BUCKETS, MidPath, Price
                                         calibrate, load_capture, order_flow, p_fill_table,
                                         sensitivity_table, synthetic_capture, touch_spells)
 
-DISTANCES = (0.0, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0)
+DISTANCES = (0.0, 1.0, 2.0, 5.0, 8.0, 16.0, 32.0)
 
 
 def fmt(x, nd=4):

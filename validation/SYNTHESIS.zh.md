@@ -44,13 +44,15 @@ OKX 侧补齐只需 VPS 上 `history-candles?bar=1m` 90 天，再跑同一 `cros
   文件：`validation/fill/data/sample/`（已 gitignore）。
 - **框架**：`validation/harness` 自测 **PASS**（6 类 schema、保守/队列成交、回放、指标）；
   `validation/fill/{fill_model,metrics,analysis}.py` 已有队列反应模型 + markout/p_fail。
-- **当前问题（必须修）**：smoke 分析给出 touch 60 s p_fill ≈ 0.97、queue 模型 1.0，
-  与 Maglaras–Moallemi–Wang（1 min 45%）和 Daru（touch 逆向选择为负）明显不符 →
-  说明「价格穿过」判定过宽/队列校准未标定。**这些 p_fill 数值不能用于定仓位**，只证明管线可跑。
+- **保守 p_fill（price-through，仅 Lighter 7 分钟样本，不能外推）**：
+  ETH 0 bps/60 s ≈ 0.78、1 bps/60 s ≈ 0.58；VVV 0.86/0.76；COIN 0.97/0.95；LIT 0.87/0.75；
+  300 s 普遍趋近 1（样本短、趋势性强）。队列解析模型仍给 ≈1.0，**明显高估**，默认已关闭
+  cancel 项；只把 price-through 作为下界/保守值。
+- **当前结论**：管线可跑、真实数据已入盘，但 p_fill 绝对值**未通过实盘校准**（样本 7 分钟、
+  无自有订单、无 OKX）。它只能用于相对比较（距离/时长/标的），不能用于定仓位。
 - 采集还暴露：`mean_latency_ms ≈ −725 ms`（venue ts 与 recv_ts 时钟偏斜），必须做时钟对齐；
   `offset_gaps` 每条消息都变，说明 book 是增量流，重放需维护 book。
-- 下一步：把 fill model 的触发条件改成「trade/queue 消耗到我们的价位且 queue_ahead→0」，
-  用真实 Lighter 订单（testnet 或最小 mainnet 单）做 tier-3 校准；OKX 侧待 VPS。
+- 下一步：按 §5 用 testnet/最小 mainnet 单做 tier-3 校准；OKX 侧待 VPS。
 
 ## 3. T3 — Lighter 多 key / nonce（源码 + 沙箱已验证）
 

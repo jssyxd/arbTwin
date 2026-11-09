@@ -912,19 +912,45 @@ class MidPath:
 
 @dataclass
 class QueueDepletionModel:
-    """Analytic: ``P(fill <= h) = 1 - exp(-(pi(d) + (mu_trade+mu_cancel)/Q0) * h)``.
+    """Conservative FIFO queue-reaction model (lower bound, not midpoint).
 
-    Two competing exponential clocks: the price sweeps through us (``pi``), or the
-    queue ahead drains (FIFO: trades + cancellations ahead of us, rate ``mu/Q0``).
-    Deliberately memoryless -- that is the point of the baseline: it has one
-    parameter per channel, both measured, and it cannot hide a shape assumption.
+    A resting post-only order fills if *and only if* one of two observable events
+    occurs before ``horizon_s``:
+
+    1. **Price-through** — a trade prints strictly *through* our price (the
+       opposing best crosses our level).  Measured as ``through_hazard_per_s``:
+       the rate at which the opposing best ticks through distance ``d``.
+    2. **Queue-depletion** — cumulative *trades* at our price level consume the
+       visible queue ahead of us (``queue_ahead -> 0``).  Under FIFO only trades
+       at our price reduce the queue ahead; cancellations of orders *at* our
+       level are NOT counted — most cancels are behind us, and counting all of
+       them is the over-optimistic path the old model took.
+
+    **No mid-cross fills**: the mid crossing our price without a trade printing
+    at our level does NOT trigger a fill.  This is conservative vs both the
+    MMV (Maglaras–Moallemi–Wang 2021) numbers and Daru's touch adverse-selection
+    evidence.
+
+    Queue-ahead source: ``calib.queue_base`` — the median visible queue size at
+    the resting distance bucket, measured from Lighter's order-level REST polls.
+
+    Analytic formula::
+
+        P(fill <= h) = 1 - exp(-(π(d) + μ_trade(d) / Q₀(d)) · h)
+
+    where π is the through-hazard, μ_trade is the tape-verified execution rate
+    against resting orders, and Q₀ is the median queue ahead at distance d.
+
+    Sensitivity knobs (``use_cancel=True``, ``queue_mult=0.5/2.0``) are confined
+    to the sensitivity table — the main p_fill table uses the conservative
+    default ``use_cancel=False``, ``queue_mult=1.0``.
     """
 
     name = "queue_exponential"
     calib: Calibration
     edges: Sequence[float] = DEFAULT_BUCKETS
-    queue_mult: float = 1.0            # sensitivity knob: Q0 * queue_mult
-    use_cancel: bool = True            # sensitivity knob: ignore cancellations ahead
+    queue_mult: float = 1.0
+    use_cancel: bool = False           # conservative: only trades drain the queue ahead
 
     def rates(self, distance_bps: float) -> tuple[float, float, float, float]:
         i = bucket_of(max(distance_bps, 0.0), self.edges)
@@ -957,20 +983,20 @@ class QueueDepletionModel:
 
 @dataclass
 class QueueMonteCarloModel:
-    """Same measured rates, but the distance is not frozen: the mid moves.
+    """Conservative queue model with a moving mid (Monte Carlo, lower bound).
+
+    Same two-fill-event logic as ``QueueDepletionModel``, but the
+    distance-to-mid is not frozen: the mid path is bootstrapped or OU-fitted
+    from the capture.  As the dislocation runs away, measured rates go to zero
+    and the order is censored at the horizon — the mechanism behind p_fail.
 
     Per step ``dt`` (the ``MidPath`` grid), for each simulated order:
 
-    * the distance ``d`` is updated from the mid path (bootstrap or OU);
-    * the queue ahead ``Q`` shrinks by ``Poisson((mu_trade+mu_cancel)(d) * dt)`` --
-      FIFO means only size ahead of us can help us, and both channels do;
-    * an independent Bernoulli with rate ``pi(d) * dt`` fires the price-through
-      event (a sweep that eats the whole queue at once);
-    * ``Q <= 0`` or a through event => filled at our price, at that time.
-
-    A quote whose dislocation runs away simply stops draining (measured
-    ``mu(d) -> 0`` at large ``d``) and is censored at the horizon.  That is the
-    mechanism behind ``p_fail``, not an extra parameter.
+    * distance ``d`` is updated from the mid path;
+    * queue ahead ``Q`` shrinks by ``Poisson(μ_trade(d) · dt)`` — FIFO, trades
+      only (``use_cancel=False`` by default), cancellations excluded;
+    * a Bernoulli with rate ``π(d) · dt`` fires the price-through event;
+    * ``Q <= 0`` or a through event → filled at our price, at that time.
     """
 
     name = "queue_monte_carlo"
@@ -979,7 +1005,7 @@ class QueueMonteCarloModel:
     edges: Sequence[float] = DEFAULT_BUCKETS
     n_paths: int = 2000
     queue_mult: float = 1.0
-    use_cancel: bool = True
+    use_cancel: bool = False
     seed: int = 11
 
     def _rate(self, d: np.ndarray, which: str) -> np.ndarray:
@@ -1165,7 +1191,8 @@ def synthetic_capture(symbol: str = "SYNTH", duration_s: float = 1800.0, step_s:
                   book_ts=ts, book_sym=np.zeros(n, dtype=int), book_bid=bid, book_ask=ask,
                   book_mid=mid, book_bid_sz=q_bid, book_ask_sz=q_ask,
                   book_spread_bps=np.full(n, 2 * half_spread_bps),
-                  book_latency_ms=np.full(n, 25.0), book_offset_gap=np.zeros(n, dtype=int),
+                  book_latency_ms=np.full(n, 25.0), book_venue_ts_ms=np.full(n, ts[0] * 1000),
+                  book_resync_age_s=np.full(n, 0.0), book_offset_gap=np.full(n, 300, dtype=int),
                   meta={"synthetic_params": {
                       "sigma_bps_per_sqrt_s": sigma_bps_per_sqrt_s, "theta": theta,
                       "half_spread_bps": half_spread_bps, "touch_size_base": touch_size_base,
