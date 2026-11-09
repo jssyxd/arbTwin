@@ -13,3 +13,11 @@ state/
 .secrets/
 research/*/_cache/
 research/*/tmp/
+validation/*/data/
+.venv-nt2/
+systems/*/tmp/
+validation/**/.venv-nt2/
+validation/**/.src/
+validation/**/.token
+systems/*/.*
+validation/*/.*

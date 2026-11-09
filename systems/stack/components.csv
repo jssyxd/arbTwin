@@ -1,0 +1,68 @@
+layer,component,role,license,activity,fit,stack
+engine,arbtwin custom engine (wave.py/engine.py),live two-leg basis engine; kept for Stack A and as P2 rollback,in-repo MIT (repo LICENSE),in-repo; developed 2026-11,high-adopt,A
+engine,nautilus_trader v2.x (LiveNode),event-driven engine; only framework with official OKX+Lighter adapters,LGPL-3.0,pushed 2026-11-09; 31.4k stars; v2.0.0rc8 2026-10-28,high-adopt,B;C
+engine,QuantConnect LEAN,alternative engine; no Lighter adapter -> disqualified live,Apache-2.0,pushed 2026-11-09; 22.5k stars,low-reject (TradFi research only),alt
+engine,freqtrade,single-venue bot; not applicable,GPL-3.0,pushed 2026-11-09; 56.7k stars,low-reject,alt
+engine,jesse,single-venue framework; not applicable,MIT,pushed 2026-11-08; 8.8k stars,low-reject,alt
+engine,passivbot,single-venue grid/DCA maker; not applicable,Unlicense,pushed 2026-11-09; 2.2k stars,low-reject,alt
+ingest,arbtwin native clients (venues/okx.py; venues/lighter.py),OKX WS books5 + REST 400-level (separate caches); Lighter WS,in-repo,in-repo,high-adopt,A;C
+ingest,elliottech/lighter-python,Lighter signed REST/WS SDK; nonce recovery tooling,Apache-2.0,pushed 2026-11-06; 341 stars,high-adopt,A;C
+ingest,cryptofeed,normalized OKX L2/trades/funding/OI capture; bridge to NT catalog,AGPL-3.0 (LICENSE fetched),pushed 2026-11-09; 3.0k stars,high-adopt (internal use only),C
+ingest,ccxt,unified REST/WS read-only probing and screening; never on order path,MIT,pushed 2026-11-09; 44.8k stars,medium (Lighter support [VERIFY]),A;C
+ingest,okxapi/python-okx,semi-official OKX REST SDK fallback,no license file,pushed 2026-09-07; 863 stars,medium-alt,alt
+ingest,nautilus-okx / nautilus-lighter adapters,venue WS/REST data+exec clients (Rust; PyO3),LGPL-3.0 (part of nautilus_trader),pushed 2026-11-09,high-adopt,B;C
+normalize,NT v2 data types (QuoteTick/TradeTick/OrderBookDelta),canonical tick schema for catalog+backtest,LGPL-3.0,pushed 2026-11-09,high-adopt,B;C
+normalize,arbtwin models.py/spread.py (unit_ratio; bps convention),domain normalization USDT/USDC + sign convention; build,in-repo,in-repo,high-build,A;B;C
+storage,Parquet + pyarrow (NT ParquetDataCatalog layout),tick/lake ground truth; immutable content-hashed sessions,Apache-2.0,active (pyarrow releases monthly [VERIFY]),high-adopt,A;B;C
+storage,SQLite (WAL),rounds/ledger queries; operational state,public domain,active,high-adopt,A
+storage,QuestDB,hot time-series: ticks; order events; rounds ledger; SQL+ILP,Apache-2.0,pushed 2026-11-09; 17.5k stars,high-adopt (ILP throughput [VERIFY]),B;C
+storage,ClickHouse,LOB analytics; markout/fill-probability over months,Apache-2.0,pushed 2026-11-09; 50.8k stars,high-adopt,B;C
+storage,ArcticDB,versioned research DataFrames (calibration/screening assets),BUSL-1.1 (LICENSE.txt fetched; internal use OK),pushed 2026-11-09; 2.6k stars,high-adopt (research plane only),B;C
+storage,MinIO,S3 API for Parquet lake,AGPL-3.0 [VERIFY current],active [VERIFY],medium-alt (plain S3/B2 simpler),alt
+storage,DuckDB,ad-hoc SQL over Parquet in notebooks/CI,MIT,active [VERIFY],medium (query tool not store),A;C
+storage,TimescaleDB,Postgres TSDB alternative,Apache-2.0 + TSL community license [VERIFY],pushed 2026-11-09; 23.8k stars,medium-alt (license split),alt
+storage,influxdb,TSDB alternative,Apache-2.0,pushed 2026-11-06; 31.8k stars,medium-alt,alt
+backtest,arbtwin backtest/replay.py + scripts/mechanics_run.py,signal-honest replay + deterministic fake-clock golden CI gate,in-repo,in-repo,high-adopt,A
+backtest,NT BacktestNode + ParquetDataCatalog,tick replay backtest; event-sourced; deterministic,LGPL-3.0,pushed 2026-11-09,high-adopt,B;C
+backtest,custom FillModel/LatencyModel (queue-reactive; 300ms bump),maker fill probability + Lighter speed bump fidelity; build,LGPL host (own code),build target P1,high-build,B;C
+execution,arbtwin wavetrader (post-only; collared IOC; no market orders),order placement for Stack A,in-repo,in-repo,high-adopt,A
+execution,NT ExecutionClients per venue per key,maker/taker key split = one LighterExecutionClient per api_key_index,LGPL-3.0,pushed 2026-11-09,high-adopt,B;C
+execution,hummingbot,ArbitrageExecutor = market-order fire-and-forget -> rejected; mine RateOracle only,Apache-2.0,pushed 2026-11-09; 21.1k stars,low-reject (mine RateOracle),alt
+execution,vnpy,OKX gateway redundant vs NT; no Lighter,MIT,pushed 2026-11-07; 46.3k stars,low-reject (revisit for CTP/TradFi),alt
+execution,counterfactual5/funding-arb,live-tested Lighter+OKX adapters as cross-check reference; market-order style,MIT,pushed 2026-11-09; 11 stars,mine-only,C
+order-state,TwoLegBasisStrategy (PairBook; slices; zones; HALTED),two-leg round/slice state machine + top-up pricing off filled-leg avg; the edge; build,in-repo (design: research/execution/design.md),build target P0-P2,high-build,A;B;C
+order-state,pranay123-stack/perp-funding-basis-arb,pattern source: HedgeCycle; base_exposure hedge ratio; DEGRADED rebalance; patient exit,MIT,pushed 2026-09-25; paper-only,mine-only,C
+reconciliation,arbtwin reconcile.py (position-delta ledger),venue-authoritative fill detection + startup orphan gate,in-repo,in-repo,high-adopt,A
+reconciliation,NT ExecutionEngine reconciliation,startup + runtime engine<->venue recon; event-sourced cache,LGPL-3.0,pushed 2026-11-09,high-adopt,B;C
+reconciliation,three-way recon worker (venue<->TSDB<->engine),PHANTOM/MISSING/QUANTITY/ORPHAN/UNEXPLAINED taxonomy; freshness ts; kill authority; build,own code (pattern: pfba),build target P2,high-build,B;C
+risk,arbtwin gates (band/mechanics/fees/anchor/issuer_risk),domain gates: basis band; depth; liq distance; funding; OI; in-repo,in-repo,in-repo,high-adopt,A
+risk,NT RiskEngine,structural pre-trade checks + trading states ACTIVE/REDUCING/HALTED,LGPL-3.0,pushed 2026-11-09,high-adopt,B;C
+risk,separate risk service (NATS lease; fail-closed),in-flight-inclusive exposure cap; halt authority decoupled from engine; build,own code,build target P2,high-build,B;C
+risk,kill switch (file flag -> cancel-all -> collared-IOC ladder 25/50/100bps),flatten without market orders; auditable state/kill.jsonl,in-repo (design.md §6),build target P0,high-build,A;B;C
+observability,Prometheus + Alertmanager,metrics store + tiered alert routing (critical/warn/info),Apache-2.0,pushed 2026-11-09; 67.6k stars,high-adopt,A;B;C
+observability,node_exporter (+textfile collector),host metrics; engine writes arbtwin_*.prom without HTTP endpoint,Apache-2.0,pushed 2026-11-02; 13.9k stars,high-adopt,A;B;C
+observability,Grafana,dashboards over Prometheus/QuestDB/ClickHouse/Loki,AGPL-3.0,pushed 2026-11-09; 77.8k stars,high-adopt,A(optional);B;C
+observability,Loki,log aggregation over JSONL streams,AGPL-3.0,active [VERIFY],high-adopt,B;C
+observability,Tempo,trace store; round_id=trace_id joins logs/metrics,AGPL-3.0,active [VERIFY],high-adopt,B;C
+observability,opentelemetry-python,tracing/metrics SDK; span per round/slice/order,Apache-2.0,pushed 2026-11-08; 2.7k stars,high-adopt,B;C
+observability,ntfy,push alerts to phone (Alertmanager receiver),Apache-2.0,active [VERIFY],medium-adopt,A;C
+observability,VictoriaMetrics,long-term Prometheus-compatible metrics,Apache-2.0,active [VERIFY],medium-alt,alt
+observability,arbtwin alerts.jsonl + monitor matrix,audit trail of alerts; 8-signal one-screen matrix,in-repo,in-repo,high-adopt,A;B;C
+deploy,systemd (+WatchdogSec; LoadCredential),process supervision; secret injection without env,GPL-2 (OS component),OS-shipped,high-adopt,A;B;C
+deploy,chrony,NTP discipline; makestep; offset alerts,GPL-2 [VERIFY],OS-shipped,high-adopt,A;B;C
+deploy,restic,encrypted nightly backups of state/catalog/db/configs to B2/NAS,BSD-2-Clause [VERIFY],active [VERIFY],high-adopt,A;B
+deploy,Docker + Compose (digest-pinned),artifact parity testnet<->prod; release symlink rollback,Apache-2.0,active,high-adopt,B;C
+deploy,GitHub Actions + uv.lock,reproducible CI: tests + mechanics golden replay + license scan,Apache-2.0 (uv: MIT/Apache [VERIFY]),active,high-adopt,A;B;C
+deploy,UFW + fail2ban,VPS hardening,GPL,OS-shipped,high-adopt,A
+messaging,NATS JetStream,bus: streams + KV leader lease + trading-state; single binary,Apache-2.0,pushed 2026-11-09; 21.0k stars,high-adopt,B;C
+messaging,Redpanda,Kafka-API bus alternative,BSL/community license [VERIFY],pushed 2026-10-08 (month-stale) [VERIFY],medium-alt,alt
+messaging,Apache Kafka,bus alternative if team already runs it,Apache-2.0,pushed 2026-11-09; 34.2k stars,medium-alt,alt
+orchestration,Dagster,asset pipelines: screening; calibration; walk-forward; data quality; off trading plane,Apache-2.0 (core),pushed 2026-11-09; 16.4k stars,high-adopt,B;C
+orchestration,cron,scheduled rescans/calibration for Stack A,OS-shipped,OS-shipped,high-adopt,A
+orchestration,Apache Airflow,orchestrator alternative; task-graph not asset model,Apache-2.0,pushed 2026-11-09; 47.4k stars,medium-alt,alt
+orchestration,Prefect,orchestrator alternative; Python-native,Apache-2.0,pushed 2026-11-09; 24.1k stars,medium-alt,alt
+secrets,sops + age,encrypted secret files; systemd credential injection,MPL-2.0 (sops) / BSD-3 (age),pushed 2026-11-09 / 2026-08-29,high-adopt,A;B
+secrets,OpenBao,secrets service; transit; audit (Vault fork),MPL-2.0 [VERIFY],active [VERIFY],high-adopt,B
+secrets,HashiCorp Vault,secrets service alternative,BUSL-1.1 (NOASSERTION via API),pushed 2026-11-09; 36.5k stars,medium-alt (license),alt
+secrets,Infisical,secrets platform alternative,MIT core + EE (NOASSERTION),pushed 2026-11-09; 30.4k stars,medium-alt,alt
+ha,NATS KV lease + venue API-key IP whitelist fencing,active/passive failover; split-brain cannot trade (hard fence),own practice (NATS Apache-2.0),n/a,high-build,B
