@@ -9,3 +9,7 @@ __pycache__/
 run/
 *.log
 state/
+.herd-dispatch/
+.secrets/
+research/*/_cache/
+research/*/tmp/
