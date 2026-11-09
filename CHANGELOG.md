@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## RWA R1 — 数据、标的与实盘武装（2026-11-10）
+
+- **部署**：`192.168.1.98`（Ubuntu 24.04，Python 3.13.7），`~/arbTwin` @ `ccaa796`；
+  OKX 通过 LA 跳板 tinyproxy（`127.0.0.1:3128`）恢复，`doctor` 两所 OK（528 / 215 markets）。
+- **标的筛选**：14 天 19 个 RWA 请求，仅 **CRCL** 过线（unit CV 0.045%、corr 0.9986、
+  p95 8.96 bps、b* 8.12、净 1.25 bps/round、0.28 trades/day、fill prob 0.035）。
+  30 天复筛仍只有 CRCL。KORU 因 CV 0.507% 被拒；ANTHROPIC/KIOXIA 事前剔除（单位/陈旧）。
+- **风控配置**：`config/risk.rwa.yaml`（1 标的、$12/腿、$10 floor、$15 裸腿、3% 止损）
+  与 `config/symbols.rwa.yaml`（CRCL，deadline 900/900 s，hold 2 h）。
+- **数据检查**：`scripts/round_check.py` 对 `state/snapshot.jsonl` 输出 PASS；CRCL 14 行、
+  basis p50 4.39 / p95 6.80、OKX/Lighter 价差 1.49/1.05 bps；实际 cadence ≈20 s，
+  与 1.5 s 目标不符，列入 R2。
+- **实盘**：`arbtwin-rwa-live.service` 曾以 `dry_run=false`、`FILL_SOURCE=positions` 启动；
+  两所权益 31.479 / 27.629，仓位 flat。**未产生任何订单/成交**；评审（glm+qwen）一致 **HOLD**，
+  服务已停止。
+- **定时**：`rwa-check.timer`（每小时）、`rwa-screen.timer`（每日 02:00，只写
+  `symbols.rwa.next.yaml`，不自动上线）。
+- **阻塞**：SMB `//192.168.1.6/iflow` 凭据缺失，数据暂存 25 G 本地盘。
+- 评审：`rounds/R1/review-{glm,qwen}.md`。阻断项：RTH p95 6.26 < b* 8.12（净 −1.86 bps）、
+  300 bps 止损 vs 1.25 bps edge、裸腿 15 > 名义 12、kill switch 缺失、数据检查仅 174 s。
+  R1 结论为 HOLD，不是盈利轮；R2 先修这些再重新武装。
+
 ## v0.3.0 — 实盘开启：持仓增量对账（2026-11-08）
 
 - `arbtwin/reconcile.py`：live 的唯一成交来源是**交易所持仓增量**（不是盘口穿越）。
