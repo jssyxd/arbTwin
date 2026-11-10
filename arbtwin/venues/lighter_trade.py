@@ -79,11 +79,16 @@ class LighterTradeClient:
             self._error = "pip install 'lighter-sdk>=1.1.8' (extras: live)"
             raise RuntimeError(self._error)
         self._bridge = AsyncBridge()
-        self._client = lighter.SignerClient(
-            url=self.base_url,
-            account_index=self.account_index,
-            api_private_keys={self.api_key_index: self.api_private_key},
-        )
+
+        async def _make_client():
+            # SignerClient builds an aiohttp connector, which needs a running loop.
+            return lighter.SignerClient(
+                url=self.base_url,
+                account_index=self.account_index,
+                api_private_keys={self.api_key_index: self.api_private_key},
+            )
+
+        self._client = self._bridge.call(_make_client())
         # surfaces a misconfigured key/margin setup before the first order
         self.check()
         return self._client

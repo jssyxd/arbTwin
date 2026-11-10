@@ -11,8 +11,8 @@ strategy: wave
 
 limits:
   max_margin_usage_pct: 0.35        # per venue, of that venue's own equity
-  max_notional_usd: 12.0
-  min_round_notional_usd: 10.0          # per symbol across both legs
+  max_notional_usd: 15.0
+  min_round_notional_usd: 14.0          # per symbol across both legs
   max_open_symbols: 1
   max_unhedged_notional_usd: 15.0
   max_unhedged_ms: 800              # Lighter post-only fill -> OKX IOC hedge budget

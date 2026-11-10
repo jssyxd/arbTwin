@@ -1,0 +1,11 @@
+# R1 live smoke (2026-11-10 02:56 UTC)
+SMOKE_PLAN {"mid": 68.105, "okx_bid": 68.1, "okx_ask": 68.11, "lt_bid": 68.009, "lt_ask": 68.017, "qty_okx": 0.2, "qty_lt": 0.2, "ratio": 0.99870312}
+SMOKE_LT 1794275425169
+SMOKE_OKX 4086025578834481154
+SMOKE_POS {"lighter:CRCL": -0.2}
+SMOKE_FLAT {}
+SMOKE_DONE
+# Note: Lighter sell filled (short 0.2), OKX post-only buy did not fill and was cancelled;
+# the Lighter leg was flattened immediately. Realized cost ~= 0.015 USDC.
+# Earlier attempts: OKX post-only orders filled twice (0.2 total) before Lighter was reachable;
+# both were flattened at 68.06 with reduce-only IOC. Equity impact ~= 0.011 USD.

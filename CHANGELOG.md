@@ -18,6 +18,10 @@
 - **定时**：`rwa-check.timer`（每小时）、`rwa-screen.timer`（每日 02:00，只写
   `symbols.rwa.next.yaml`，不自动上线）。
 - **阻塞**：SMB `//192.168.1.6/iflow` 凭据缺失，数据暂存 25 G 本地盘。
+- **Smoke（用户授权）**：Lighter 卖出 0.2 CRCL 成交、OKX post-only 未成交并撤单，Lighter 腿立即平掉，
+  最终两所 flat；总成本 ≈$0.03。发现并修复：`LighterVenue._order_seq` 未初始化、
+  `SignerClient` 在事件循环外构造、Lighter 中国出口 20558 限制（KL 代理 3129）、
+  $12 名义取整后低于 Lighter $10 min_quote（上限改 $15 / floor $14）。
 - 评审：`rounds/R1/review-{glm,qwen}.md`。阻断项：RTH p95 6.26 < b* 8.12（净 −1.86 bps）、
   300 bps 止损 vs 1.25 bps edge、裸腿 15 > 名义 12、kill switch 缺失、数据检查仅 174 s。
   R1 结论为 HOLD，不是盈利轮；R2 先修这些再重新武装。

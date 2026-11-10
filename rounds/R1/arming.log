@@ -1,0 +1,20 @@
+# live arming evidence
+
+$ date -u
+Mon Nov  9 18:53:00 UTC 2026
+
+$ systemctl show arbtwin-rwa-live -p ExecMainStartTimestamp -p Environment
+ExecMainStartTimestamp=Tue 2026-11-10 02:51:53 CST
+Environment=ARBTWIN_DRY_RUN=0 PYTHONUNBUFFERED=1 ARBTWIN_FILL_SOURCE=positions ARBTWIN_SYMBOLS=config/symbols.rwa.yaml ARBTWIN_RISK=config/risk.rwa.yaml ARBTWIN_MAX_NOTIONAL=12 ARBTWIN_TARGET_LEVERAGE=3
+
+$ grep 'dry_run=' ~/arbTwin/state/rwa_live.log | tail -2
+arbTwin 0.2.0 | dry_run=False | symbols=1
+
+$ tail -1 ~/arbTwin/state/snapshot.jsonl
+{"ts": 1794250332.4960554, "symbols": [], "executed": [], "risk_actions": [], "dry_run": false}
+
+$ cd ~/arbTwin && . .venv/bin/activate && set -a && . ./.env && set +a && python probe.py
+okx_equity 31.479443369173588
+lt_equity 27.629041
+okx_pos {}
+lt_pos {}

@@ -93,6 +93,9 @@ class LighterVenue(VenueAdapter):
         self.book_ttl_s = 1.5
         self._clients: dict[str, object] = {}
         self._client_error: Optional[str] = None
+        # Lighter dedupes on client_order_index; two orders must never share one.
+        # Seed once from the wall clock, then count monotonically.
+        self._order_seq = itertools.count(int(time.time() * 1000) % (2 ** 48 - 1))
 
     # ------------------------------------------------------------------ rest
     def _get(self, path: str, params: Optional[dict] = None) -> dict:
