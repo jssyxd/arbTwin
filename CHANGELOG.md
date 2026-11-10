@@ -26,6 +26,21 @@
   300 bps 止损 vs 1.25 bps edge、裸腿 15 > 名义 12、kill switch 缺失、数据检查仅 174 s。
   R1 结论为 HOLD，不是盈利轮；R2 先修这些再重新武装。
 
+## R2 — 裸腿防护、分代理、RTH gate（2026-11-11）
+
+- `wave.py`：VWAP 成交均价；`unhedged_grace_s=5s`（首腿成交后给另一腿 5 秒，逾期 abort）；
+  `force_flat()` 在行情缺失时用最后成交价 ±25 bps 的 reduce-only IOC 平裸腿；
+  `rounds.jsonl` 记录 abort_cost_bps。
+- `engine.py`：行情异常时不再跳过持仓；kill switch（`state/KILL` / `ARBTWIN_KILL`）；
+  RTH 净额 gate 在 live 启动时执行（`allow_negative_rth: true` 时显式告警后放行）。
+- `venues/base.py`：GET 20s/3 次退避；POST 永不盲目重试；OKX/Lighter 分代理
+  (`ARBTWIN_PROXY_OKX=3128`, `ARBTWIN_PROXY_LIGHTER=3129`)。
+- 风控：`max_unhedged 10 < max_notional 15`、RTH 净额门槛、连亏/日回撤/KILL、
+  CRCL registry 标记。
+- `scripts/rwa_status.py` + `deploy/rwa-status.{service,timer}`：每 5 分钟记录权益、
+  持仓、PnL、最近快照、critical 告警数。
+- 测试：`pytest tests/` 100 项全绿；实盘服务重启，`dry_run=False`，当前 flat。
+
 ## RWA R1 live incident — 裸 OKX 腿（2026-11-10）
 
 - 实盘 CRCL 时 OKX post-only 买入 0.2 成交，Lighter 腿因 20558 jurisdiction / REST 超时未成交，
