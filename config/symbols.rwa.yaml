@@ -4,6 +4,11 @@ universe:
   approved: 1
   rejected: 18
 approved:
+# CRCL stays listed for evidence continuity with rounds/R1, but it is NOT armable:
+# net_rth_bps -1.86 < screening.min_net_rth_bps 2.0 (config/risk.rwa.yaml), so
+# screening.rth_net_gate() logs BLOCK for it and `arbtwin screen` now rejects it.
+# A fresh screen run emits this file with `approved: []` until a symbol clears the
+# RTH floor.  Set screening.allow_negative_rth: true only to override deliberately.
 - symbol: CRCL
   unit_ratio: 0.99870312
   sigma_1h_bps: 87.89
@@ -22,6 +27,7 @@ approved:
   spread_lighter_bps: 1.64
   capture_bps: 10.59
   net_per_round_bps: 1.25
+  net_rth_bps: -1.86
   max_fee_bps_for_breakeven: 5.25
   events: 4
   completion: 1.0
@@ -38,6 +44,7 @@ approved:
     completion: 1.0
     trades_per_day: 0.28
     net_per_round_bps: 1.25
+    net_rth_bps: -1.86
     max_fee_bps_for_breakeven: 5.25
     fill_probability: 0.035
 rejected:
@@ -49,7 +56,7 @@ rejected:
   net_taker_bps: 0.0
 - symbol: BMNR
   reasons:
-  - ratio cv 0.208% / return corr 0.9779 outside [0.500%, 0.99] -> not one instrument
+  - return corr 0.9779 < min 0.9900 -> not one instrument
   ratio_cv_pct: 0.2084
   return_corr: 0.9779
   net_taker_bps: 0.0
@@ -85,13 +92,13 @@ rejected:
   net_taker_bps: -8.5
 - symbol: US100
   reasons:
-  - ratio cv 0.051% / return corr 0.9875 outside [0.500%, 0.99] -> not one instrument
+  - return corr 0.9875 < min 0.9900 -> not one instrument
   ratio_cv_pct: 0.0509
   return_corr: 0.9875
   net_taker_bps: 0.0
 - symbol: IBM
   reasons:
-  - ratio cv 0.065% / return corr 0.9839 outside [0.500%, 0.99] -> not one instrument
+  - return corr 0.9839 < min 0.9900 -> not one instrument
   ratio_cv_pct: 0.0652
   return_corr: 0.9839
   net_taker_bps: 0.0
@@ -133,7 +140,7 @@ rejected:
   net_taker_bps: 0.0
 - symbol: US500
   reasons:
-  - ratio cv 0.068% / return corr 0.9353 outside [0.500%, 0.99] -> not one instrument
+  - return corr 0.9353 < min 0.9900 -> not one instrument
   ratio_cv_pct: 0.0685
   return_corr: 0.9353
   net_taker_bps: 0.0
@@ -163,7 +170,8 @@ rejected:
   net_taker_bps: -4.24
 - symbol: KORU
   reasons:
-  - ratio cv 0.554% / return corr 0.9807 outside [0.500%, 0.99] -> not one instrument
+  - ratio cv 0.554% > max 0.500% -> not one instrument
+  - return corr 0.9807 < min 0.9900 -> not one instrument
   ratio_cv_pct: 0.5542
   return_corr: 0.9807
   net_taker_bps: 0.0

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 import time
 from dataclasses import dataclass, field
@@ -41,6 +42,7 @@ from .fees import FeeBook, build_fee_book, fee_from_market_specs
 from .issuer_risk import build_card
 from .manipulation import profile
 from .mechanics import MechanicsBook, build_mechanics, evaluate_venue, latency_cost_bps
+from .screening import gate_universe
 from .models import (LIGHTER, OKX, Book, ExecutionPlan, Fill, GateVerdict, MarketSpec,
                      MarketStats, OrderRequest, SpreadRow, VenuePosition)
 from .spread import build_plan, compute_row, summarise
@@ -165,6 +167,7 @@ class TwinEngine:
         self.trades: list[dict] = []
         self.alerts: list[dict] = []
         self._loaded = False
+        self.rth_gates = {}
 
     # ------------------------------------------------------------------ universe
     def load_universe(self, approved: Optional[list[dict]] = None) -> dict[str, SymbolState]:
@@ -201,6 +204,10 @@ class TwinEngine:
                 spec_lighter=lighter_specs[symbol],
                 session=session,
             )
+        # The RTH net gate is an arm-time (live) veto. Dry-run keeps observing so
+        # mechanics/replay tests and screening diagnostics still run.
+        self.rth_gates = ({} if self.cfg.dry_run else
+                          gate_universe(self.cfg, lambda m: self._alert("info", "rth", m)))
         self._reconcile_orphans()
         if self.cfg.strategy == "wave":
             params = {s: st.wave_params for s, st in self.states.items() if st.wave_params}
@@ -707,6 +714,10 @@ class TwinEngine:
             st = self.states.get(row.symbol)
             if st is None or st.wave_params is None or not self.wave.params.get(row.symbol):
                 continue
+            gate = self.rth_gates.get(row.symbol)
+            if gate is not None and not gate.allow:
+                out.append({"symbol": row.symbol, "blocked": gate.reason})
+                continue
             rnd = self.wave.round_for(row.symbol)
             holding = rnd.state is not RoundState.FLAT
             # A gate/notional failure may veto a *new* entry, but it must never
@@ -731,6 +742,11 @@ class TwinEngine:
                 lt_book = self.lighter.book(row.symbol)
             except Exception as exc:
                 self._alert("warn", row.symbol, f"wave: book unavailable: {exc}")
+                if rnd.state is not RoundState.FLAT:
+                    self._alert("critical", row.symbol,
+                                f"force-flat: book unavailable while holding position ({rnd.state.value})")
+                    payload = self.wave.force_flat(row.symbol, f"book unavailable: {exc}")
+                    out.append(payload)
                 continue
             if self.cfg.dry_run:
                 fills = self.wave.poll_fills(row.symbol, okx_book, lt_book)
@@ -852,8 +868,36 @@ class TwinEngine:
     def _persist_trade(self, trade: dict) -> None:
         write_state(f"{self.cfg.state_dir}/trades.jsonl", trade)
 
+    def _kill_switch(self) -> None:
+        """Cancel all orders, force-flat all open rounds, log kill event."""
+        self._alert("critical", "engine", "KILL SWITCH ACTIVATED — cancelling all, force-flat")
+        # Cancel everything on both venues
+        for symbol in self.states:
+            for venue in (self.okx, self.lighter):
+                try:
+                    venue.cancel_all(symbol)
+                except Exception:
+                    pass
+        # Force-flat every open wave round
+        if self.wave is not None:
+            for symbol, rnd in list(self.wave.rounds.items()):
+                if rnd.state is not RoundState.FLAT:
+                    try:
+                        self.wave.force_flat(symbol, "kill switch")
+                    except Exception as exc:
+                        self._alert("critical", symbol, f"kill force-flat failed: {exc}")
+        write_state(f"{self.cfg.state_dir}/kill.jsonl", {
+            "ts": time.time(), "reason": "KILL file or ARBTWIN_KILL env"
+        })
+
     # ------------------------------------------------------------------ loop
     def run_once(self) -> dict:
+        # Kill switch: state/KILL file or ARBTWIN_KILL=1 env var
+        kill_path = Path(self.cfg.state_dir) / "KILL"
+        if kill_path.exists() or os.environ.get("ARBTWIN_KILL") == "1":
+            self._kill_switch()
+            return {"ts": time.time(), "killed": True}
+
         snap = self.snapshot()
         self._update_orphans(snap)
         if not self.cfg.dry_run and self.wave is not None:
@@ -946,7 +990,16 @@ class TwinEngine:
                 except Exception:
                     pass
             from . import wave as _w
-            _w.on_fill(rnd, ev.venue, ev.qty_base, ev.px)
+            intents = _w.on_fill(rnd, ev.venue, ev.qty_base, ev.px)
+            for intent in intents:
+                if intent.kind == "cancel" and intent.venue:
+                    try:
+                        target = self.lighter if intent.venue == LIGHTER else self.okx
+                        target.cancel_all(ev.symbol)
+                    except Exception:
+                        pass
+                    self._alert("warn", ev.symbol,
+                                f"cancelled {intent.venue} leg: {intent.reason}")
             self._alert("info", ev.symbol,
                         f"fill reconciled: {ev.venue} {ev.side} {ev.qty_base:.6f} @ {ev.px:.6f} "
                         f"-> {rnd.state.value}")

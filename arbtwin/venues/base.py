@@ -64,17 +64,20 @@ def http_json(
     params: Optional[dict] = None,
     body: Optional[dict] = None,
     headers: Optional[dict] = None,
-    timeout: float = 10.0,
-    retries: int = 2,
+    timeout: float = 20.0,
+    retries: int = 3,
     proxy: Optional[str] = None,
 ) -> Any:
     if params:
         query = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
         url = f"{url}{'&' if '?' in url else '?'}{query}"
     payload = json.dumps(body).encode() if body is not None else None
+    # Reads may be retried; signed writes (POST) must never be replayed blindly:
+    # a timeout can mean the order landed, and a retry would double it.
+    attempts = 1 if method.upper() not in ("GET", "HEAD") else retries + 1
 
     last_err: Exception | None = None
-    for attempt in range(retries + 1):
+    for attempt in range(attempts):
         req = urllib.request.Request(url, data=payload, method=method.upper())
         req.add_header("User-Agent", DEFAULT_UA)
         req.add_header("Accept", "application/json")
@@ -102,7 +105,7 @@ def http_json(
                 break
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             last_err = VenueUnavailable(f"{url}: {exc}")
-        time.sleep(0.25 * (attempt + 1))
+        time.sleep(min(2.0, 0.5 * (2 ** attempt)))
     raise last_err or VenueUnavailable(url)
 
 

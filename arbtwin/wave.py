@@ -73,6 +73,10 @@ class WaveParams:
     # ENTRY_PARTIAL is the only state holding a naked leg.  `limits.max_unhedged_*
     # existed in config but was never read; enforce it here.
     max_unhedged_notional_usd: float = 150.0
+    # Give the second leg a short window to fill before aborting the naked leg.
+    # 0 would cancel on the first fill and make dual-maker impossible; too long
+    # is the R1 incident. 5 s is the live default.
+    unhedged_grace_s: float = 5.0
     adverse_move_stop_bps: float = 60.0
     # A naked leg's stop has to scale with the leg's own volatility: at SOXL's
     # sigma_1h = 244 bps a fixed 60 bps stop aborts every pair, while on a quiet
@@ -93,6 +97,7 @@ class Leg:
     px: float = 0.0
     filled_qty: float = 0.0
     filled_px: float = 0.0
+    filled_notional: float = 0.0   # VWAP numerator: sum(qty * px)
 
     @property
     def is_filled(self) -> bool:
@@ -120,6 +125,7 @@ class Round:
     frozen: dict[str, float] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
     escalation_used: bool = False
+    unit_ratio: float = 1.0
 
     # ------------------------------------------------------------------ helpers
     @property
@@ -143,7 +149,8 @@ class Round:
         return [] if (not filled or not empty) else filled + empty
 
     def to_dict(self) -> dict:
-        return {
+        d = {
+            "ts": round(time.time(), 3),
             "symbol": self.symbol, "round_id": self.round_id, "state": self.state.value,
             "direction": self.direction,
             "entry_basis_bps": round(self.entry_basis_bps, 2),
@@ -153,6 +160,11 @@ class Round:
             "exit": {l.venue: [round(l.qty_base, 8), round(l.filled_px, 8)] for l in self.exit_legs},
             "notes": self.notes[-6:],
         }
+        if self.state == RoundState.ABORT_UNWIND:
+            cost = _abort_cost_bps(self)
+            if cost is not None:
+                d["abort_cost_bps"] = cost
+        return d
 
 
 @dataclass
@@ -289,6 +301,10 @@ def decide(round_: Round, basis_bps: float, okx_book: Book, lt_book: Book,
     if round_.state == RoundState.ENTRY_PARTIAL:
         filled = [l for l in round_.entry_legs if l.filled_qty > 0]
         empty = [l for l in round_.entry_legs if l.filled_qty <= 0]
+        # R2: cancel-and-abort on first fill.  The unfilled leg was already
+        # cancelled by on_fill() when the transition fired; here we initiate
+        # the passive unwind of the filled (naked) leg.  Re-quoting after a
+        # top-up decision is a future enhancement.
         # a naked leg is bounded by money and by adverse price, not only by time
         naked_usd = 0.0
         worst_adverse_bps = 0.0
@@ -320,14 +336,23 @@ def decide(round_: Round, basis_bps: float, okx_book: Book, lt_book: Book,
             for leg in empty:
                 out.append(Intent("cancel", reason=f"abort ({why})", venue=leg.venue))
             return out + decide(round_, basis_bps, okx_book, lt_book, ratio, qty_okx, passive_net_bps)
-        # patience: keep quoting the leg that has not filled
+        # Short grace: keep the missing leg live for unhedged_grace_s, then abort.
+        if round_.entry_age_s < p.unhedged_grace_s:
+            for leg in empty:
+                book = lt_book if leg.venue == "lighter" else okx_book
+                req = _requote(leg, book, p)
+                if req:
+                    req.symbol = round_.symbol
+                    out.append(Intent("quote", req, "grace: waiting for second leg", leg.venue))
+            return out
+        round_.notes.append(f"unhedged grace {p.unhedged_grace_s:.0f}s expired — aborting naked leg")
+        round_.exit_legs = [Leg(l.venue, "sell" if l.side == "buy" else "buy",
+                                l.filled_qty, px=0.0) for l in filled]
+        round_.exit_state_ts = time.time()
+        round_.state = RoundState.ABORT_UNWIND
         for leg in empty:
-            book = lt_book if leg.venue == "lighter" else okx_book
-            req = _requote(leg, book, p)
-            if req:
-                req.symbol = round_.symbol
-                out.append(Intent("quote", req, "waiting for the other leg", leg.venue))
-        return out
+            out.append(Intent("cancel", reason="abort other leg", venue=leg.venue))
+        return out + decide(round_, basis_bps, okx_book, lt_book, ratio, qty_okx, passive_net_bps)
 
     if round_.state == RoundState.ABORT_UNWIND:
         pending = [l for l in round_.exit_legs if l.remaining > 0]
@@ -417,7 +442,12 @@ def decide(round_: Round, basis_bps: float, okx_book: Book, lt_book: Book,
 # --------------------------------------------------------------------------- #
 # fill bookkeeping (called by the engine when a venue reports a fill)
 # --------------------------------------------------------------------------- #
-def on_fill(round_: Round, venue: str, qty: float, px: float) -> None:
+def on_fill(round_: Round, venue: str, qty: float, px: float) -> list[Intent]:
+    """Apply a fill to the round. Returns intents (e.g. cancel the other leg).
+
+    VWAP: `filled_notional += qty*px` so `filled_px` is the volume-weighted
+    average, not just the last fill price.
+    """
     legs = (round_.exit_legs
             if round_.state in (RoundState.EXIT_QUOTING, RoundState.EXIT_PARTIAL,
                                 RoundState.ABORT_UNWIND)
@@ -425,10 +455,13 @@ def on_fill(round_: Round, venue: str, qty: float, px: float) -> None:
     for leg in legs:
         if leg.venue != venue:
             continue
+        capped = min(leg.qty_base, leg.filled_qty + qty) - leg.filled_qty
+        leg.filled_notional += capped * px
         leg.filled_qty = min(leg.qty_base, leg.filled_qty + qty)
-        leg.filled_px = px
+        leg.filled_px = leg.filled_notional / leg.filled_qty if leg.filled_qty > 0 else 0.0
         break
 
+    intents: list[Intent] = []
     entry_filled = [l for l in round_.entry_legs if l.filled_qty > 0]
     if round_.state == RoundState.ENTRY_QUOTING and entry_filled:
         round_.state = RoundState.ENTRY_PARTIAL
@@ -446,20 +479,86 @@ def on_fill(round_: Round, venue: str, qty: float, px: float) -> None:
             and all(l.is_filled for l in round_.exit_legs):
         round_.state = RoundState.FLAT
         round_.notes.append("abort unwind complete: flat")
+    return intents
 
 
-def round_pnl_bps(round_: Round) -> Optional[float]:
-    """Realised basis captured by the round, in bps of OKX notional."""
+def round_pnl_bps(round_: Round, unit_ratio: float = 0.0) -> Optional[float]:
+    """Realised basis captured by the round, in bps of OKX notional.
+
+    Lighter prices are normalised by `unit_ratio` so the basis is
+    measured in OKX-equivalent units.
+    """
+    ratio = unit_ratio if unit_ratio > 0 else round_.unit_ratio
+    if ratio <= 0:
+        return None
     lt = next((l for l in round_.entry_legs if l.venue == "lighter" and l.filled_qty > 0), None)
     ox = next((l for l in round_.entry_legs if l.venue == "okx" and l.filled_qty > 0), None)
     if not lt or not ox:
         return None
-    entry_basis = ((lt.filled_px - ox.filled_px) / ox.filled_px) * 1e4 if ox.side == "buy" \
-        else ((ox.filled_px - lt.filled_px) / ox.filled_px) * 1e4
+    lt_px_norm = lt.filled_px / ratio
+    entry_basis = ((lt_px_norm - ox.filled_px) / ox.filled_px) * 1e4 if ox.side == "buy" \
+        else ((ox.filled_px - lt_px_norm) / ox.filled_px) * 1e4
     lt_x = next((l for l in round_.exit_legs if l.venue == "lighter" and l.filled_qty > 0), None)
     ox_x = next((l for l in round_.exit_legs if l.venue == "okx" and l.filled_qty > 0), None)
     if not lt_x or not ox_x:
         return None
-    exit_basis = ((lt_x.filled_px - ox_x.filled_px) / ox_x.filled_px) * 1e4 if ox_x.side == "buy" \
-        else ((ox_x.filled_px - lt_x.filled_px) / ox_x.filled_px) * 1e4
+    lt_x_norm = lt_x.filled_px / ratio
+    exit_basis = ((lt_x_norm - ox_x.filled_px) / ox_x.filled_px) * 1e4 if ox_x.side == "buy" \
+        else ((ox_x.filled_px - lt_x_norm) / ox_x.filled_px) * 1e4
     return entry_basis - exit_basis
+
+
+def force_flat(round_: Round, reason: str, collar_bps: float = 25.0) -> list[Intent]:
+    """Produce reduce-only IOC intents for every filled leg at filled_px ± collar.
+
+    Used when the book is unavailable and we hold a naked leg: we cannot price
+    a passive unwind, so we cross at a collared price to get flat immediately.
+    Callers must execute the returned IOC intents.
+    """
+    intents: list[Intent] = []
+    for leg in round_.entry_legs:
+        if leg.filled_qty <= 0:
+            continue
+        exit_side = "sell" if leg.side == "buy" else "buy"
+        # collar away from the fill price: for a buy entry we sell below,
+        # for a sell entry we buy above (both are adverse to us)
+        sign = -1.0 if exit_side == "sell" else 1.0
+        px = leg.filled_px * (1.0 + sign * collar_bps / 1e4)
+        if px <= 0:
+            continue
+        round_.exit_legs.append(Leg(leg.venue, exit_side, leg.filled_qty, px=px))
+        intents.append(Intent("ioc",
+                              OrderRequest(leg.venue, round_.symbol, exit_side,
+                                           leg.filled_qty, px, order_type="limit",
+                                           tif="ioc", reduce_only=True),
+                              f"force flat: {reason}", leg.venue))
+    round_.state = RoundState.ABORT_UNWIND
+    round_.notes.append(f"force flat ({reason}) at ±{collar_bps}bps collar")
+    return intents
+
+
+def _abort_cost_bps(round_: Round) -> Optional[float]:
+    """Realised cost of aborting a round, in bps of the filled leg's notional.
+
+    Positive = we lost money on the abort (entry better than exit).
+    Only meaningful for ABORT_UNWIND where exit legs exist.
+    """
+    if round_.state != RoundState.ABORT_UNWIND:
+        return None
+    total_cost = 0.0
+    total_notional = 0.0
+    for entry_leg in round_.entry_legs:
+        if entry_leg.filled_qty <= 0:
+            continue
+        exit_leg = next((l for l in round_.exit_legs if l.venue == entry_leg.venue
+                         and l.filled_qty > 0), None)
+        if exit_leg is None:
+            continue
+        notional = entry_leg.filled_qty * entry_leg.filled_px
+        if entry_leg.side == "buy":
+            cost_bps = (entry_leg.filled_px - exit_leg.filled_px) / entry_leg.filled_px * 1e4
+        else:
+            cost_bps = (exit_leg.filled_px - entry_leg.filled_px) / entry_leg.filled_px * 1e4
+        total_cost += cost_bps * notional
+        total_notional += notional
+    return round(total_cost / total_notional, 2) if total_notional > 0 else None

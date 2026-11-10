@@ -24,9 +24,10 @@ The output is exactly what the engine eats: `unit_ratio`, `sigma_1h_bps`,
 from __future__ import annotations
 
 import statistics
+import sys
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 from .band import entry_band_bps, returns_from_closes, sigma_1h_bps
 from .calibration import calibrate, percentile
@@ -91,6 +92,10 @@ class ScreenRow:
     spread_lighter_bps: float = 0.0
     net_taker_bps: float = 0.0
     net_maker_bps: float = 0.0
+    # net of the *armed* trigger: p95 of the session the engine may quote in, minus
+    # the all-in breakeven b*.  Distinct from net_per_round_bps, which is built from
+    # the measured event capture and can be positive while this is negative.
+    net_rth_bps: float = 0.0
     preferred_mode: str = "hedge_now"
     reasons: list[str] = field(default_factory=list)
     reject_reasons: list[str] = field(default_factory=list)
@@ -112,11 +117,11 @@ class ScreenRow:
             "entry_deadline_s": 5400,
             "exit_deadline_s": 3600,
             "max_hold_h": 4.0,
-            "b_star_bps": round(self.b_star_bps, 2),
             "spread_okx_bps": round(self.spread_okx_bps, 2),
             "spread_lighter_bps": round(self.spread_lighter_bps, 2),
             "capture_bps": round(self.capture_bps, 2),
             "net_per_round_bps": round(self.net_per_round_bps, 2),
+            "net_rth_bps": round(self.net_rth_bps, 2),
             "max_fee_bps_for_breakeven": round(self.max_fee_bps_for_breakeven, 2),
             "events": self.events,
             "completion": round(self.completion, 3),
@@ -126,15 +131,15 @@ class ScreenRow:
                 "return_corr": round(self.return_corr, 5),
                 "score": round(self.score, 2),
                 "basis_p95_bps": round(self.basis_p95_bps, 2),
-            "basis_p95_rth_bps": round(self.basis_p95_rth_bps, 2),
-            "basis_p50_rth_bps": round(self.basis_p50_rth_bps, 2),
-            "capture_bps": round(self.capture_bps, 2),
-            "events": self.events,
-            "completion": round(self.completion, 3),
-            "trades_per_day": round(self.trades_per_day, 2),
-            "net_per_round_bps": round(self.net_per_round_bps, 2),
-            "max_fee_bps_for_breakeven": round(self.max_fee_bps_for_breakeven, 2),
-            "max_fee_bps_for_breakeven": round(self.max_fee_bps_for_breakeven, 2),
+                "basis_p95_rth_bps": round(self.basis_p95_rth_bps, 2),
+                "basis_p50_rth_bps": round(self.basis_p50_rth_bps, 2),
+                "capture_bps": round(self.capture_bps, 2),
+                "events": self.events,
+                "completion": round(self.completion, 3),
+                "trades_per_day": round(self.trades_per_day, 2),
+                "net_per_round_bps": round(self.net_per_round_bps, 2),
+                "net_rth_bps": round(self.net_rth_bps, 2),
+                "max_fee_bps_for_breakeven": round(self.max_fee_bps_for_breakeven, 2),
                 "fill_probability": round(self.fill_probability, 3),
             },
         }
@@ -142,6 +147,105 @@ class ScreenRow:
     def to_dict(self) -> dict:
         d = {k: (round(v, 6) if isinstance(v, float) else v) for k, v in self.__dict__.items()}
         return d
+
+
+def _log_line(message: str) -> None:
+    print(message, file=sys.stderr, flush=True)
+
+
+@dataclass(frozen=True)
+class RthGate:
+    """Verdict of the arm-time RTH net check (`rth_net_gate`)."""
+
+    symbol: str
+    allow: bool
+    net_rth_bps: Optional[float]      # None = unknown; never coerced to 0.0
+    min_net_rth_bps: float
+    reason: str
+
+    @property
+    def line(self) -> str:
+        return f"{'PASS' if self.allow else 'BLOCK'} {self.symbol}: {self.reason}"
+
+
+def net_rth_bps_of(entry: dict) -> Optional[float]:
+    """RTH net edge of one `symbols.*.yaml` entry, or None when not derivable.
+
+    None is not zero: an entry carrying neither the screened metric nor the two
+    numbers it is built from is *unknown*, and unknown fails closed.
+    """
+    raw = entry.get("net_rth_bps")
+    if raw is None:
+        raw = (entry.get("notes") or {}).get("net_rth_bps")
+    if raw is None:
+        # entry_bps_p95 is what the engine arms (p95 of the tradable session, else
+        # the 24h p95); b_star_bps is the all-in breakeven.
+        p95 = entry.get("entry_bps_p95") or entry.get("band_override_bps")
+        b_star = entry.get("b_star_bps")
+        if p95 is None or b_star is None:
+            return None
+        raw = float(p95) - float(b_star)
+    return float(raw)
+
+
+def rth_net_gate(entry: dict, risk: Optional[dict] = None,
+                 log: Optional[Callable[[str], None]] = None) -> RthGate:
+    """Arm-time veto on the net edge of the session the engine may quote in.
+
+    `screen_symbols` applies the same rule when it builds the universe; this is the
+    second gate because a universe is a *file*: it can be stale, hand-edited, or
+    written before the threshold existed — which is how R1 armed CRCL at a RTH net
+    of 6.26 − 8.12 = −1.86 bps/round while the headline metric said +1.25.
+    `screening.allow_negative_rth: true` arms such a symbol anyway, deliberately
+    and visibly (the line still states how far under the floor it sits).
+    """
+    screening = (risk or {}).get("screening") or {}
+    floor = float(screening.get("min_net_rth_bps", 0.0))
+    allow_negative = bool(screening.get("allow_negative_rth", False))
+    symbol = str(entry.get("symbol") or "?")
+    net = net_rth_bps_of(entry)
+    if net is None:
+        allow = False
+        reason = ("RTH net unknown (entry has no net_rth_bps and no "
+                  "entry_bps_p95/b_star_bps pair) -> fail closed")
+    elif net >= floor:
+        allow, reason = True, f"RTH net {net:+.2f}bps >= min {floor:.2f}bps"
+    elif allow_negative:
+        allow = True
+        reason = (f"RTH net {net:+.2f}bps < min {floor:.2f}bps -> armed anyway "
+                  f"(screening.allow_negative_rth: true)")
+    else:
+        allow = False
+        reason = (f"RTH net {net:+.2f}bps < min {floor:.2f}bps (p95 of the tradable "
+                  f"session − b*); set screening.allow_negative_rth: true to override")
+    gate = RthGate(symbol=symbol, allow=allow, net_rth_bps=net,
+                   min_net_rth_bps=floor, reason=reason)
+    (log or _log_line)(gate.line)
+    return gate
+
+
+def gate_universe(cfg: AppConfig,
+                  log: Optional[Callable[[str], None]] = None) -> dict[str, RthGate]:
+    """Run `rth_net_gate` over every approved symbol the live engine would arm."""
+    return {str(e.get("symbol") or "?"): rth_net_gate(e, cfg.risk, log) for e in cfg.symbols}
+
+
+def calibration_reject_reasons(calib, cv_max: float, corr_min: float) -> list[str]:
+    """One inequality per line, each with its own bound and verdict.
+
+    `calibrate()` fuses both bounds into `ratio cv 0.554% / return corr 0.9807
+    outside [0.500%, 0.99]`, which reads like an interval and hides that the two
+    checks are independent — a decisive double failure looked "borderline" in the
+    R1 write-up.  Spell out which bound failed and by how much.
+    """
+    out: list[str] = []
+    if calib.cv > cv_max:
+        out.append(f"ratio cv {calib.cv * 100:.3f}% > max {cv_max * 100:.3f}% "
+                   f"-> not one instrument")
+    if calib.ret_corr < corr_min:
+        out.append(f"return corr {calib.ret_corr:.4f} < min {corr_min:.4f} "
+                   f"-> not one instrument")
+    return out or list(calib.reasons or ["calibration failed"])
 
 
 def event_study(basis_bps: "list[tuple[float, float]]", session_kind: str = "crypto",
@@ -221,6 +325,12 @@ def screen_symbols(cfg: AppConfig, okx: OkxVenue, lighter: LighterVenue,
     min_depth = float((cfg.risk.get("screening") or {}).get("min_depth_usd_1pct", 20_000))
     min_move_bps = float((cfg.risk.get("screening") or {}).get("min_median_basis_bps", 3.0))
     max_oi_util = float((cfg.risk.get("screening") or {}).get("max_oi_utilization", 0.35))
+    # "one instrument" bounds, reported as two separate inequalities on rejection
+    cv_max = float((cfg.risk.get("screening") or {}).get("max_ratio_cv_pct", 0.5)) / 100.0
+    corr_min = float((cfg.risk.get("screening") or {}).get("min_return_corr", 0.99))
+    # net edge of the session the engine may actually quote in (see rth_net_gate)
+    min_net_rth = float((cfg.risk.get("screening") or {}).get("min_net_rth_bps", 0.0))
+    allow_negative_rth = bool((cfg.risk.get("screening") or {}).get("allow_negative_rth", False))
 
     rows: list[ScreenRow] = []
     wanted = {s.upper() for s in only} if only else None
@@ -247,12 +357,12 @@ def screen_symbols(cfg: AppConfig, okx: OkxVenue, lighter: LighterVenue,
         except Exception as exc:
             row.reject_reasons.append(f"history fetch failed: {exc}")
             continue
-        calib = calibrate(symbol, okx_series, lt_series)
+        calib = calibrate(symbol, okx_series, lt_series, cv_max=cv_max, corr_min=corr_min)
         row.unit_ratio = calib.ratio
         row.ratio_cv_pct = calib.cv * 100
         row.return_corr = calib.ret_corr
         if not calib.tradable:
-            row.reject_reasons.extend(calib.reasons or ["calibration failed"])
+            row.reject_reasons.extend(calibration_reject_reasons(calib, cv_max, corr_min))
             continue
 
         # 3. volatility + band
@@ -315,6 +425,10 @@ def screen_symbols(cfg: AppConfig, okx: OkxVenue, lighter: LighterVenue,
         row.b_star_bps = (row.maker_fee_bps
                           + 2.0 * ((row.spread_okx_bps + row.spread_lighter_bps) / 2.0)
                           + adverse_margin_bps)
+        # The armed trigger is the RTH p95 (to_symbol_entry -> entry_bps_p95), so the
+        # net that decides approval must be measured against that same number and
+        # not against the 24h p95, whose tail can sit in closed hours.
+        row.net_rth_bps = (row.basis_p95_rth_bps or row.basis_p95_bps) - row.b_star_bps
         row.depth_okx_1pct, cov_okx, comp_okx = okx_book.depth_covered(100.0)
         row.depth_lighter_1pct, cov_lt, comp_lt = lt_book.depth_covered(100.0)
         dens_okx, _, _ = okx_book.depth_density_usd_per_bps()
@@ -400,6 +514,16 @@ def screen_symbols(cfg: AppConfig, okx: OkxVenue, lighter: LighterVenue,
                 f"net {row.net_per_round_bps:+.1f}bps/round < min {min_net:.1f} "
                 f"(thin: {row.trades_per_day:.2f} trades/day, {row.completion:.0%} complete)")
             continue
+        # Armed-session economics: a symbol whose RTH p95 sits below b* loses money
+        # on every round it completes, however good the 24h headline looks (R1 F7:
+        # CRCL +1.25 headline vs −1.86 in the session the engine actually quotes).
+        if not allow_negative_rth and row.net_rth_bps < min_net_rth:
+            row.reject_reasons.append(
+                f"RTH net {row.net_rth_bps:+.2f}bps/round < min {min_net_rth:.2f}: "
+                f"p95rth {row.basis_p95_rth_bps or row.basis_p95_bps:.2f} − b* "
+                f"{row.b_star_bps:.2f} (headline net_per_round "
+                f"{row.net_per_round_bps:+.2f}bps is not the armed session)")
+            continue
         if row.score < min_score:
             row.reject_reasons.append(f"score {row.score:.2f} < {min_score}")
             continue
@@ -409,6 +533,7 @@ def screen_symbols(cfg: AppConfig, okx: OkxVenue, lighter: LighterVenue,
             f"capture {row.capture_bps:.1f}bps (p95rth {row.basis_p95_rth_bps:.1f} − "
             f"p50rth {row.basis_p50_rth_bps:.1f}) − b* {row.b_star_bps:.1f} − "
             f"p_fail {p_fail:.2f}·b* = {row.net_per_round_bps:+.1f}bps/round; "
+            f"RTH net {row.net_rth_bps:+.2f}bps/round (armed trigger − b*); "
             f"breakeven needs maker fee ≤ {row.max_fee_bps_for_breakeven:.1f}bps; "
             f"ratio {calib.ratio:.6f} cv {row.ratio_cv_pct:.3f}% corr {row.return_corr:.4f}; "
             f"sigma {sigma:.1f}bps band {band:.1f}bps; basis p95 {row.basis_p95_bps:.1f}bps; "
@@ -416,7 +541,11 @@ def screen_symbols(cfg: AppConfig, okx: OkxVenue, lighter: LighterVenue,
             f"hits band {row.fill_probability:.1%} of hours; mode {row.preferred_mode}; score {row.score:.2f}"
         )
 
-    approved = sorted([r for r in rows if r.approved], key=lambda r: -r.score)[:max_symbols]
+    # Rank by the net of the session the engine may quote in.  `score` is built from
+    # the 24h basis tail, which for an equity can live entirely in closed hours; it
+    # stays as the tie-break, not as the ranking key.
+    approved = sorted([r for r in rows if r.approved],
+                      key=lambda r: (-r.net_rth_bps, -r.score))[:max_symbols]
     for r in rows:
         if r.approved and r not in approved:
             r.approved = False
@@ -431,7 +560,8 @@ def build_symbols_yaml(rows: list[ScreenRow], generated_at: Optional[float] = No
     better historical economics), not a constraint: the engine re-decides every
     poll from live fees, basis and greeks.
     """
-    approved = [r for r in rows if r.approved]
+    # same ranking the top-N cut uses, so the file reads best-first
+    approved = sorted([r for r in rows if r.approved], key=lambda r: (-r.net_rth_bps, -r.score))
     rejected = [r for r in rows if not r.approved]
     return {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(generated_at or time.time())),

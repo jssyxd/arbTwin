@@ -113,7 +113,10 @@ class WaveTrader:
             if px is None:
                 continue
             self.quotes.pop(key, None)
-            wave.on_fill(rnd, quote.venue, quote.qty_base, px)
+            intents = wave.on_fill(rnd, quote.venue, quote.qty_base, px)
+            for intent in intents:
+                if intent.kind == "cancel":
+                    self._drop_quotes(symbol, intent.venue)
             events.append({"kind": "fill", "venue": quote.venue, "side": quote.side,
                            "qty": quote.qty_base, "px": px, "state": rnd.state.value})
         if events:
@@ -126,6 +129,7 @@ class WaveTrader:
              minutes_to_close: float = float("inf")) -> dict:
         rnd = self.round_for(symbol)
         before = rnd.state
+        rnd.unit_ratio = ratio
         intents = wave.decide(rnd, basis_bps, okx_book, lt_book, ratio, qty_okx,
                               passive_net_bps, minutes_to_close=minutes_to_close)
         executed: list[dict] = []
@@ -164,7 +168,10 @@ class WaveTrader:
                 self._drop_quotes(symbol, order.venue)
                 try:
                     fill = self.place(order)
-                    wave.on_fill(rnd, order.venue, order.qty_base, fill.px)
+                    sub_intents = wave.on_fill(rnd, order.venue, order.qty_base, fill.px)
+                    for si in sub_intents:
+                        if si.kind == "cancel":
+                            self._drop_quotes(symbol, si.venue)
                     executed.append({"kind": "ioc", "venue": order.venue, "px": fill.px,
                                      "qty": order.qty_base})
                 except Exception as exc:
@@ -180,15 +187,43 @@ class WaveTrader:
     def _persist(self, rnd: wave.Round, events: list[dict]) -> None:
         record = rnd.to_dict()
         record["events"] = events
-        record["pnl_bps"] = wave.round_pnl_bps(rnd)
+        record["pnl_bps"] = wave.round_pnl_bps(rnd, rnd.unit_ratio)
         self.persist(record)
 
     def completed_rounds(self) -> list[dict]:
         out = []
         for rnd in self.rounds.values():
             if rnd.state is wave.RoundState.FLAT and rnd.exit_legs:
-                out.append({**rnd.to_dict(), "pnl_bps": wave.round_pnl_bps(rnd)})
+                out.append({**rnd.to_dict(), "pnl_bps": wave.round_pnl_bps(rnd, rnd.unit_ratio)})
         return out
+
+    def force_flat(self, symbol: str, reason: str, collar_bps: float = 25.0) -> dict:
+        """Cancel all quotes and send reduce-only IOC at filled_px ± collar.
+
+        Used when the book is unavailable and we hold a naked leg.
+        """
+        rnd = self.round_for(symbol)
+        before = rnd.state
+        self._drop_quotes(symbol)
+        intents = wave.force_flat(rnd, reason, collar_bps)
+        executed: list[dict] = []
+        for intent in intents:
+            if intent.kind == "ioc" and intent.order is not None:
+                intent.order.symbol = symbol
+                try:
+                    fill = self.place(intent.order)
+                    sub_intents = wave.on_fill(rnd, intent.order.venue, intent.order.qty_base, fill.px)
+                    for si in sub_intents:
+                        if si.kind == "cancel":
+                            self._drop_quotes(symbol, si.venue)
+                    executed.append({"kind": "ioc", "venue": intent.order.venue,
+                                     "px": fill.px, "qty": intent.order.qty_base})
+                except Exception as exc:
+                    executed.append({"kind": "reject", "venue": intent.order.venue,
+                                     "error": str(exc)[:120]})
+        payload = {"round": rnd.to_dict(), "executed": executed, "state_before": before.value}
+        self._persist(rnd, executed)
+        return payload
 
     def reset(self, symbol: str) -> None:
         self._drop_quotes(symbol)

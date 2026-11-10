@@ -11,10 +11,15 @@ strategy: wave
 
 limits:
   max_margin_usage_pct: 0.35        # per venue, of that venue's own equity
-  max_notional_usd: 15.0
-  min_round_notional_usd: 14.0          # per symbol across both legs
+  max_notional_usd: 15.0            # per leg
+  # per LEG, not per round: engine._target_notional() sizes one leg and vetoes below
+  # this floor, so it must stay <= max_notional_usd or every round is vetoed (R1 R4).
+  min_round_notional_usd: 14.0
   max_open_symbols: 1
-  max_unhedged_notional_usd: 15.0
+  # Must stay BELOW max_notional_usd: at 15.0 (R1) a single max-size leg was always
+  # inside the cap, so the naked-leg veto could never fire (review R2).  wave.py
+  # aborts ENTRY_PARTIAL when the unhedged leg exceeds this.
+  max_unhedged_notional_usd: 10.0
   max_unhedged_ms: 800              # Lighter post-only fill -> OKX IOC hedge budget
   max_funding_carry_apr_pct: 25.0
   expected_hold_h: 2.0              # funding cost is priced over this holding period
@@ -26,9 +31,20 @@ limits:
   max_quote_ttl_s: 120              # must be < mark_window_s / 2 (see venues.yaml)
   max_book_age_s: 3.0
   cooldown_after_fill_s: 10.0
+  # legacy maker_basis drift stop (engine.manage_risk), NOT the wave exit trigger.
   emergency_stop_loss_pct: 0.03
   min_depth_usd_1pct: 20000.0
   max_slippage_bps: 6.0
+
+  # --- kill switches (docs/ROUNDS-RWA-2026-11.md §4; all three absent in R1) ---
+  # 300 bps of emergency_stop_loss_pct against a ~1-2 bps edge means one firing costs
+  # 240 rounds to recover; the wave exit is the adverse-*basis* stop instead.
+  adverse_basis_stop_bps: 25.0      # wave.WaveParams.adverse_basis_stop_bps
+  max_consecutive_losses: 2         # 2 net-loss rounds in a row -> stop new entries
+  max_daily_drawdown_pct: 0.05      # >5% of equity in one day -> stop new entries
+  kill_switch_file: state/KILL      # present -> no new entries, flatten what is open
+  # NOTE: EngineLimits (arbtwin/config.py) has no field for the four keys above, so
+  # cfg.limits silently drops them; read them via cfg.risk["limits"][...].
 
 bands:
   k_sigma: 2.0
@@ -46,6 +62,16 @@ screening:
   min_depth_usd_1pct: 20000
   min_median_basis_bps: 3.0
   max_oi_utilization: 0.35
+  # "one instrument" bounds; a rejection now reports each inequality on its own line
+  max_ratio_cv_pct: 0.5
+  min_return_corr: 0.99
+  # Net edge of the session the engine may quote in: p95(RTH basis) − b*.
+  # screen_symbols() rejects below this, and screening.rth_net_gate() logs BLOCK at
+  # arm time for any universe file that still carries such a symbol.  R1 approved
+  # CRCL off the 24h p95 (8.96 → headline +1.25) while the RTH p95 6.26 sits under
+  # b* 8.12 → −1.86 bps per RTH round (review-qwen F7).
+  min_net_rth_bps: 2.0
+  allow_negative_rth: true         # true arms a sub-floor symbol anyway, and says so
 
 # symbols known to be 24/7 crypto; everything else is treated as an equity
 # session (09:30-16:00 ET) for anchor freezing.  Extend as needed.
@@ -78,7 +104,10 @@ crypto_symbols:
 #         pre_ipo_claim | no_index_price
 #   soft: synthetic_spot | thin_float | recently_listed | weekend_gap
 # ---------------------------------------------------------------------------
-registry: {}
+registry:
+  CRCL:
+    flags: [synthetic_spot]
+    note: "tokenized equity perp, RTH-only, thin 0.28 trades/day"
 # Example (kept commented so the file stays valid for a fresh deployment):
 # registry:
 #   ANTHROPIC:

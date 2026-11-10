@@ -56,16 +56,25 @@ def test_entry_quotes_both_legs_on_the_correct_sides():
     assert all(q.order.tif == "post_only" for q in quotes)
 
 
-def test_one_leg_filled_keeps_quoting_the_other_and_never_markets():
+def test_one_leg_filled_cancels_the_other_and_aborts():
+    """R2: first fill cancels the unfilled leg, then passive unwind of the filled leg."""
     r = mk_round()
     okx, lt = mk_books(lt_offset_bps=20.0)
     decide(r, 20.0, okx, lt, 1.0, 4.0, 16.0)
     on_fill(r, "lighter", qty=4.0, px=lt.bid)          # sell leg fills first
     assert r.state is RoundState.ENTRY_PARTIAL
     intents = decide(r, 20.0, okx, lt, 1.0, 4.0, 16.0)
-    assert [i.kind for i in intents] == ["quote"]
-    assert intents[0].venue == "okx" and intents[0].order.tif == "post_only"
-    assert intents[0].order.side == "buy"
+    kinds = [i.kind for i in intents]
+    # Grace window: keep quoting the missing leg, no immediate cancel.
+    assert "quote" in kinds and "cancel" not in kinds
+    r.entry_state_ts = time.time() - 10.0  # grace expired
+    intents = decide(r, 20.0, okx, lt, 1.0, 4.0, 16.0)
+    kinds = [i.kind for i in intents]
+    assert "cancel" in kinds
+    # the quote is a post-only unwind of the filled lighter leg (buy back)
+    quote_intent = next(i for i in intents if i.kind == "quote")
+    assert quote_intent.order.tif == "post_only"
+    assert quote_intent.order.reduce_only
 
 
 def test_both_filled_means_hedged_then_exit_at_p50():

@@ -26,13 +26,17 @@ from .venues.lighter import LighterVenue
 from .venues.okx import OkxVenue
 
 
-def _proxy() -> str | None:
-    return os.environ.get("ARBTWIN_PROXY") or os.environ.get("HTTPS_PROXY") or None
+def _proxy_for(venue: str) -> str | None:
+    return (os.environ.get(f"ARBTWIN_PROXY_{venue.upper()}")
+            or os.environ.get("ARBTWIN_PROXY")
+            or os.environ.get("HTTPS_PROXY") or None)
 
 
 def _venues(cfg: AppConfig):
-    proxy = _proxy()
-    return OkxVenue(cfg.okx, proxy=proxy), LighterVenue(cfg.lighter, proxy=proxy)
+    # OKX and Lighter need different egress: OKX via the LA proxy, Lighter via KL
+    # (Lighter returns 20558 restricted jurisdiction from CN and US).
+    return (OkxVenue(cfg.okx, proxy=_proxy_for("okx")),
+            LighterVenue(cfg.lighter, proxy=_proxy_for("lighter")))
 
 
 def cmd_doctor(args) -> int:
