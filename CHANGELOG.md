@@ -26,6 +26,16 @@
   300 bps 止损 vs 1.25 bps edge、裸腿 15 > 名义 12、kill switch 缺失、数据检查仅 174 s。
   R1 结论为 HOLD，不是盈利轮；R2 先修这些再重新武装。
 
+## RWA R1 live incident — 裸 OKX 腿（2026-11-10）
+
+- 实盘 CRCL 时 OKX post-only 买入 0.2 成交，Lighter 腿因 20558 jurisdiction / REST 超时未成交，
+  轮次停在 `ENTRY_PARTIAL`；行情 REST 持续超时，引擎无法走被动 unwind。
+- 手动停止服务并以 reduce-only IOC 在 65.77 平掉 0.2 CRCL；两所现已 flat。
+- 权益：59.108 → 58.787，已实现损失 ≈ **$0.321**（含 smoke）。
+- 修复项（未完成前不重启 live）：OKX/Lighter 分代理（3128/3129）、裸腿在行情缺失时强制
+  collared IOC、Lighter 腿先确认再发 OKX、`rounds.jsonl` 恢复、kill switch。
+- 证据：`rounds/R1/INCIDENT-2026-11-10.md`。
+
 ## v0.3.0 — 实盘开启：持仓增量对账（2026-11-08）
 
 - `arbtwin/reconcile.py`：live 的唯一成交来源是**交易所持仓增量**（不是盘口穿越）。
